@@ -35,7 +35,11 @@ function App() {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
-      setFile(acceptedFiles[0]);
+      const uploadedFile = acceptedFiles[0];
+      setFile(uploadedFile);
+      // Set title from filename (without extension)
+      const fileName = uploadedFile.name.replace(/\.[^/.]+$/, "");
+      setTitle(fileName);
       setActiveStep(0);
       setError(null);
       setSuccess(null);
@@ -65,11 +69,15 @@ function App() {
       formData.append('file', file);
       formData.append('action', 'convert');
 
-      await axios.post('http://localhost:5000/api/process', formData, {
+      const response = await axios.post('http://localhost:5000/api/process', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
+
+      if (response.data.defaultTitle && !title) {
+        setTitle(response.data.defaultTitle);
+      }
 
       setIsConverting(false);
       setActiveStep(1);
@@ -101,6 +109,10 @@ function App() {
           'Content-Type': 'multipart/form-data'
         }
       });
+
+      if (response.data.defaultTitle && !title) {
+        setTitle(response.data.defaultTitle);
+      }
 
       if (response.data.url) {
         setSuccess(`File published successfully! URL: ${response.data.url}`);
