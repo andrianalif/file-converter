@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# WordPress API credentials
+# WordPress API credentials, change this to your own credentials
 WP_USER = "alif.adrian"
 WP_APP_PASSWORD = "xBa8 zJjb UDhK oXcP NeqR 7MDm"
 WP_API_URL = "https://frontier.vstecs.ai/wp-json/wp/v2/pages"
