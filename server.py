@@ -6,6 +6,7 @@ import time
 import logging
 import base64
 from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 import warnings
 import json
 from datetime import datetime
@@ -27,8 +28,39 @@ WP_API_URL = "https://frontier.vstecs.ai/wp-json/wp/v2/pages"
 
 logger.info("WordPress credentials loaded successfully")
 
+def is_cell_bold(cell):
+    """Helper function to safely check if a cell's font is bold"""
+    try:
+        if not cell or not hasattr(cell, 'font'):
+            return False
+        return cell.font.bold if cell.font else False
+    except Exception as e:
+        logger.debug(f"Error checking bold: {str(e)}")
+        return False
+
+def get_cell_value_safe(cell):
+    """Helper function to safely get cell value"""
+    try:
+        if not cell:
+            return ''
+        return str(cell.value) if cell.value is not None else ''
+    except Exception as e:
+        logger.debug(f"Error getting cell value: {str(e)}")
+        return ''
+
+def get_cell_number_format(cell):
+    """Helper function to safely get cell number format"""
+    try:
+        if not cell:
+            return ''
+        return str(cell.number_format) if cell.number_format else ''
+    except Exception as e:
+        logger.debug(f"Error getting number format: {str(e)}")
+        return ''
+
 def convert_excel_to_html(file_path):
     try:
+        logger.debug(f"Loading workbook: {file_path}")
         # Load workbook with data_only=True to get calculated values instead of formulas
         wb = load_workbook(file_path, data_only=True)
         
@@ -39,106 +71,33 @@ def convert_excel_to_html(file_path):
         product_contexts = []
         current_category = None
         
-        html_content = f"""
+        # CSS styles as a separate string
+        css_styles = """
         <style>
-            body { 
-                font-family: 'Segoe UI', sans-serif; 
-                line-height: 1.6; 
-                color: #333; 
-                margin: 0; 
-                padding: 20px; 
-                background-color: #f4f4f4; 
-            }
-            h1, h2 { 
-                color: #2c3e50; 
-                margin-bottom: 20px;
-            }
-            .category-header {
-                background-color: #f8f9fa;
-                padding: 15px;
-                margin: 20px 0;
-                border-left: 5px solid #2c3e50;
-                font-size: 1.2em;
-                font-weight: bold;
-            }
-            .main-title {
-                font-size: 2em;
-                text-align: center;
-                margin-bottom: 30px;
-                color: #2c3e50;
-            }
-            .subtitle {
-                font-size: 1.5em;
-                text-align: center;
-                margin: 20px 0;
-                color: #34495e;
-            }
-            table { 
-                width: 100%; 
-                border-collapse: collapse; 
-                margin: 20px 0; 
-                background-color: #fff; 
-                border: 1px solid #ddd;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            th, td { 
-                border: 1px solid #ddd; 
-                padding: 12px 15px; 
-                text-align: left; 
-                vertical-align: middle;
-            }
-            th { 
-                background-color: #f8f9fa;
-                font-weight: bold;
-                color: #2c3e50;
-                border-bottom: 2px solid #ddd;
-            }
-            td {
-                border-bottom: 1px solid #ddd;
-            }
-            tr:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            tr:hover {
-                background-color: #f5f5f5;
-            }
-            .empty-row {
-                height: 20px;
-                background-color: transparent;
-                border: none;
-            }
-            .empty-row td {
-                border: none;
-            }
-            .price-column {
-                text-align: right;
-                font-family: monospace;
-                white-space: nowrap;
-            }
-            .product-number-column {
-                font-family: monospace;
-                white-space: nowrap;
-            }
-            .description-column {
-                min-width: 300px;
-            }
-            .section-header {
-                background-color: #f8f9fa;
-                font-weight: bold;
-                color: #2c3e50;
-            }
-            .section-header td {
-                padding: 15px;
-                font-size: 1.1em;
-            }
-            .metadata {
-                text-align: center;
-                color: #666;
-                margin: 10px 0;
-                font-style: italic;
-            }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+            h1, h2 { color: #2c3e50; margin-bottom: 20px; }
+            .category-header { background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-left: 5px solid #2c3e50; font-size: 1.2em; font-weight: bold; }
+            .main-title { font-size: 2em; text-align: center; margin-bottom: 30px; color: #2c3e50; }
+            .subtitle { font-size: 1.5em; text-align: center; margin: 20px 0; color: #34495e; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #fff; border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            th, td { border: 1px solid #ddd; padding: 12px 15px; text-align: left; vertical-align: middle; }
+            th { background-color: #f8f9fa; font-weight: bold; color: #2c3e50; border-bottom: 2px solid #ddd; }
+            td { border-bottom: 1px solid #ddd; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+            tr:hover { background-color: #f5f5f5; }
+            .empty-row { height: 20px; background-color: transparent; border: none; }
+            .empty-row td { border: none; }
+            .price-column { text-align: right; font-family: monospace; white-space: nowrap; }
+            .product-number-column { font-family: monospace; white-space: nowrap; }
+            .description-column { min-width: 300px; }
+            .section-header { background-color: #f8f9fa; font-weight: bold; color: #2c3e50; }
+            .section-header td { padding: 15px; font-size: 1.1em; }
+            .metadata { text-align: center; color: #666; margin: 10px 0; font-style: italic; }
         </style>
+        """
         
+        html_content = f"""
+        {css_styles}
         <h1 class="main-title">Price List</h1>
         <div class="metadata">
             <p>Last Updated: {current_time}</p>
@@ -146,6 +105,7 @@ def convert_excel_to_html(file_path):
         """
         
         for sheet in wb.sheetnames:
+            logger.debug(f"Processing sheet: {sheet}")
             ws = wb[sheet]
             
             # Add sheet title
@@ -159,25 +119,22 @@ def convert_excel_to_html(file_path):
             headers = {}
             first_row = next(ws.rows)
             for idx, cell in enumerate(first_row):
-                if cell.value:
-                    headers[idx] = str(cell.value).strip()
+                header_value = get_cell_value_safe(cell)
+                if header_value:
+                    headers[idx] = str(header_value).strip()
             
             # Process rows
-            for row_idx, row in enumerate(ws.iter_rows()):
+            for row_idx, row in enumerate(ws.rows):
                 # Skip completely empty rows but add some spacing
-                if all(cell.value is None for cell in row):
+                if all(get_cell_value_safe(cell) == '' for cell in row):
                     if not is_header_section:
                         html_content += '<tr class="empty-row"><td colspan="100%">&nbsp;</td></tr>\n'
                     continue
                 
                 # Check if this is a header/category row (bold text in first column)
                 first_cell = row[0]
-                is_bold = False
-                if hasattr(first_cell, 'font') and first_cell.font is not None:
-                    is_bold = first_cell.font.bold
-                
-                if is_bold and first_cell.value:
-                    current_category = first_cell.value
+                if is_cell_bold(first_cell) and get_cell_value_safe(first_cell):
+                    current_category = get_cell_value_safe(first_cell)
                     is_header_section = True
                     html_content += f'<tr class="section-header"><td colspan="100%">{current_category}</td></tr>\n'
                     continue
@@ -189,8 +146,8 @@ def convert_excel_to_html(file_path):
                 row_data = {}
                 for col_idx, cell in enumerate(row):
                     # Get cell value and format
-                    value = cell.value
-                    number_format = cell.number_format if hasattr(cell, 'number_format') and cell.number_format else ''
+                    value = get_cell_value_safe(cell)
+                    number_format = get_cell_number_format(cell)
                     
                     # Determine column type for styling
                     header = headers.get(col_idx, '')
@@ -204,7 +161,7 @@ def convert_excel_to_html(file_path):
                         css_class = ''
                     
                     # Format cell value based on type and format
-                    if value is None:
+                    if value == '':
                         display_value = ''
                     elif isinstance(value, (int, float)):
                         if any(price_term in str(header).lower() for price_term in ['price', 'usd', '$']) or '$' in number_format:
