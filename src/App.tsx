@@ -8,8 +8,6 @@ import {
   Button,
   TextField,
   CircularProgress,
-  Alert,
-  Snackbar,
   Stepper,
   Step,
   StepLabel,
@@ -20,6 +18,7 @@ import {
 } from '@mui/material';
 import { CloudUpload, Publish, Refresh, Description } from '@mui/icons-material';
 import axios from 'axios';
+import StatusMessage from './components/StatusMessage';
 import './App.css';
 
 function App() {
@@ -30,6 +29,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
+  const [showStatus, setShowStatus] = useState(false);
 
   const steps = ['Upload', 'Convert', 'Publish'];
 
@@ -43,6 +43,7 @@ function App() {
       setActiveStep(0);
       setError(null);
       setSuccess(null);
+      setShowStatus(false);
     }
   }, []);
 
@@ -57,12 +58,14 @@ function App() {
   const handleConvert = async () => {
     if (!file) {
       setError('Please select a file');
+      setShowStatus(true);
       return;
     }
 
     setIsConverting(true);
     setError(null);
     setSuccess(null);
+    setShowStatus(false);
 
     try {
       const formData = new FormData();
@@ -82,21 +85,25 @@ function App() {
       setIsConverting(false);
       setActiveStep(1);
       setSuccess('File converted successfully!');
+      setShowStatus(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to convert file');
       setIsConverting(false);
+      setShowStatus(true);
     }
   };
 
   const handlePublish = async () => {
     if (!file || !title) {
       setError('Please select a file and enter a title');
+      setShowStatus(true);
       return;
     }
 
     setIsPublishing(true);
     setError(null);
     setSuccess(null);
+    setShowStatus(false);
 
     try {
       const formData = new FormData();
@@ -120,13 +127,16 @@ function App() {
         setError('Publish successful but no URL returned');
       }
       setIsPublishing(false);
+      setShowStatus(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to publish');
       setIsPublishing(false);
+      setShowStatus(true);
     }
   };
 
-  const handleCloseSnackbar = () => {
+  const handleCloseStatus = () => {
+    setShowStatus(false);
     setError(null);
     setSuccess(null);
   };
@@ -137,6 +147,7 @@ function App() {
     setActiveStep(0);
     setError(null);
     setSuccess(null);
+    setShowStatus(false);
   };
 
   return (
@@ -250,20 +261,15 @@ function App() {
         </Grid>
       </Grid>
 
-      <Snackbar
-        open={!!error || !!success}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={error ? 'error' : 'success'}
-          sx={{ width: '100%' }}
-        >
-          {error || success}
-        </Alert>
-      </Snackbar>
+      {showStatus && (
+        <StatusMessage
+          type={error ? 'error' : 'success'}
+          title={error ? 'Error!' : 'Success!'}
+          message={error || success || ''}
+          buttonText={error ? 'Try Again' : 'Continue'}
+          onButtonClick={handleCloseStatus}
+        />
+      )}
     </Container>
   );
 }

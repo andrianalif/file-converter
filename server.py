@@ -69,7 +69,9 @@ def convert_excel_to_html(file_path):
         
         # Initialize context storage
         product_contexts = []
+        product_groups = {}  # For grouping products by name
         current_category = None
+        current_product_name = None
         
         # CSS styles as a separate string
         css_styles = """
@@ -135,6 +137,7 @@ def convert_excel_to_html(file_path):
                 first_cell = row[0]
                 if is_cell_bold(first_cell) and get_cell_value_safe(first_cell):
                     current_category = get_cell_value_safe(first_cell)
+                    current_product_name = current_category  # Set product name from category
                     is_header_section = True
                     html_content += f'<tr class="section-header"><td colspan="100%">{current_category}</td></tr>\n'
                     continue
@@ -185,6 +188,7 @@ def convert_excel_to_html(file_path):
                 
                 # Store context for this product row
                 if row_idx > 0 and row_data:
+                    product_number = row_data.get('Product Number', '')
                     description_value = row_data.get('Description', '')
                     description_str = str(description_value) if description_value is not None else ''
                     
@@ -195,9 +199,11 @@ def convert_excel_to_html(file_path):
                             price_value = row_data[key]
                             break
                     
+                    # Create product context
                     product_context = {
                         'category': current_category or sheet,
-                        'product_number': row_data.get('Product Number', ''),
+                        'product_name': current_product_name,
+                        'product_number': product_number,
                         'description': description_str,
                         'price': price_value,
                         'subcategory': current_category,
@@ -208,17 +214,31 @@ def convert_excel_to_html(file_path):
                         }
                     }
                     product_contexts.append(product_context)
+                    
+                    # Group products by product name
+                    if current_product_name:
+                        if current_product_name not in product_groups:
+                            product_groups[current_product_name] = {
+                                'product_numbers': [],
+                                'descriptions': {},
+                                'prices': {}
+                            }
+                        if product_number:
+                            product_groups[current_product_name]['product_numbers'].append(product_number)
+                            product_groups[current_product_name]['descriptions'][product_number] = description_str
+                            product_groups[current_product_name]['prices'][product_number] = price_value
             
             html_content += "</table>\n</div>\n"
         
-        # Add structured data
+        # Add structured data with enhanced context
         structured_data = {
             "@context": "https://schema.org/",
             "@type": "ItemList",
             "itemListElement": [
                 {
                     "@type": "Product",
-                    "name": ctx['product_number'],
+                    "name": ctx['product_name'],
+                    "productNumber": ctx['product_number'],
                     "description": ctx['description'],
                     "category": ctx['category'],
                     "offers": {
@@ -228,7 +248,8 @@ def convert_excel_to_html(file_path):
                     }
                 }
                 for ctx in product_contexts
-            ]
+            ],
+            "productGroups": product_groups  # Add product groups for better context
         }
         
         html_content += f"""
@@ -236,7 +257,24 @@ def convert_excel_to_html(file_path):
             {json.dumps(structured_data)}
         </script>
         <div id="product-contexts" style="display: none;" data-context-version="1.0">
-            {json.dumps(product_contexts)}
+            {json.dumps({
+                'products': product_contexts,
+                'groups': product_groups,
+                'common_questions': [
+                    {
+                        'question': 'What are the product numbers for {}?',
+                        'type': 'product_numbers_by_name'
+                    },
+                    {
+                        'question': 'What is the price of {}?',
+                        'type': 'price_by_product_number'
+                    },
+                    {
+                        'question': 'Can you describe {}?',
+                        'type': 'description_by_product_number'
+                    }
+                ]
+            })}
         </div>
         """
         
