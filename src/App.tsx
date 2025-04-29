@@ -14,11 +14,14 @@ import {
   Grid,
   Card,
   CardContent,
-  Divider
+  ThemeProvider,
+  CssBaseline,
 } from '@mui/material';
 import { CloudUpload, Publish, Refresh, Description } from '@mui/icons-material';
 import axios from 'axios';
 import StatusMessage from './components/StatusMessage';
+import ThemeToggle from './components/ThemeToggle';
+import { lightTheme, darkTheme } from './theme';
 import './App.css';
 
 function App() {
@@ -30,6 +33,13 @@ function App() {
   const [success, setSuccess] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [showStatus, setShowStatus] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  const theme = isDarkMode ? darkTheme : lightTheme;
+
+  const toggleTheme = () => {
+    setIsDarkMode(!isDarkMode);
+  };
 
   const steps = ['Upload', 'Convert', 'Publish'];
 
@@ -151,126 +161,130 @@ function App() {
   };
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, textAlign: 'center' }}>
-        <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-          Price List Publisher
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary">
-          Convert and publish your Excel price lists to WordPress
-        </Typography>
-      </Box>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box sx={{ mb: 4, textAlign: 'center' }}>
+          <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+            Price List Publisher
+          </Typography>
+          <Typography variant="subtitle1" color="text.secondary">
+            Convert and publish your Excel price lists to WordPress
+          </Typography>
+        </Box>
 
-      <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-        {steps.map((label, index) => (
-          <Step key={label} completed={activeStep > index}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
+        <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+          {steps.map((label, index) => (
+            <Step key={label} completed={activeStep > index}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card elevation={3} sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Upload Excel File
-              </Typography>
-              <Paper
-                {...getRootProps()}
-                sx={{
-                  p: 3,
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  backgroundColor: isDragActive ? 'primary.light' : 'background.paper',
-                  border: '2px dashed',
-                  borderColor: isDragActive ? 'primary.main' : 'divider',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    backgroundColor: 'primary.light',
-                    borderColor: 'primary.main',
-                  }
-                }}
-              >
-                <input {...getInputProps()} />
-                <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                {isDragActive ? (
-                  <Typography color="primary">Drop the file here...</Typography>
-                ) : (
-                  <Typography>
-                    Drag and drop a file here, or click to select a file
-                  </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Card elevation={3} sx={{ height: '100%' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Upload Excel File
+                </Typography>
+                <Paper
+                  {...getRootProps()}
+                  sx={{
+                    p: 3,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    backgroundColor: isDragActive ? 'primary.light' : 'background.paper',
+                    border: '2px dashed',
+                    borderColor: isDragActive ? 'primary.main' : 'divider',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      backgroundColor: 'primary.light',
+                      borderColor: 'primary.main',
+                    }
+                  }}
+                >
+                  <input {...getInputProps()} />
+                  <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  {isDragActive ? (
+                    <Typography color="primary">Drop the file here...</Typography>
+                  ) : (
+                    <Typography>
+                      Drag and drop a file here, or click to select a file
+                    </Typography>
+                  )}
+                </Paper>
+                {file && (
+                  <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Description color="primary" />
+                    <Typography variant="body2">{file.name}</Typography>
+                  </Box>
                 )}
-              </Paper>
-              {file && (
-                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Description color="primary" />
-                  <Typography variant="body2">{file.name}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Card elevation={3} sx={{ height: '100%' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Page Details
+                </Typography>
+                <TextField
+                  fullWidth
+                  label="Page Title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Enter the title for your price list page"
+                />
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleConvert}
+                    disabled={!file || isConverting || activeStep > 0}
+                    startIcon={isConverting ? <CircularProgress size={20} /> : <Refresh />}
+                  >
+                    {isConverting ? 'Converting...' : 'Convert'}
+                  </Button>
+
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handlePublish}
+                    disabled={!file || !title || isPublishing || activeStep < 1}
+                    startIcon={isPublishing ? <CircularProgress size={20} /> : <Publish />}
+                  >
+                    {isPublishing ? 'Publishing...' : 'Publish'}
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleReset}
+                    disabled={!file && !title}
+                  >
+                    Reset
+                  </Button>
                 </Box>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
 
-        <Grid item xs={12} md={6}>
-          <Card elevation={3} sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Page Details
-              </Typography>
-              <TextField
-                fullWidth
-                label="Page Title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                sx={{ mb: 2 }}
-                placeholder="Enter the title for your price list page"
-              />
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleConvert}
-                  disabled={!file || isConverting || activeStep > 0}
-                  startIcon={isConverting ? <CircularProgress size={20} /> : <Refresh />}
-                >
-                  {isConverting ? 'Converting...' : 'Convert'}
-                </Button>
-
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={handlePublish}
-                  disabled={!file || !title || isPublishing || activeStep < 1}
-                  startIcon={isPublishing ? <CircularProgress size={20} /> : <Publish />}
-                >
-                  {isPublishing ? 'Publishing...' : 'Publish'}
-                </Button>
-
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  onClick={handleReset}
-                  disabled={!file && !title}
-                >
-                  Reset
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {showStatus && (
-        <StatusMessage
-          type={error ? 'error' : 'success'}
-          title={error ? 'Error!' : 'Success!'}
-          message={error || success || ''}
-          buttonText={error ? 'Try Again' : 'Continue'}
-          onButtonClick={handleCloseStatus}
-        />
-      )}
-    </Container>
+        {showStatus && (
+          <StatusMessage
+            type={error ? 'error' : 'success'}
+            title={error ? 'Error!' : 'Success!'}
+            message={error || success || ''}
+            buttonText={error ? 'Try Again' : 'Continue'}
+            onButtonClick={handleCloseStatus}
+          />
+        )}
+      </Container>
+    </ThemeProvider>
   );
 }
 
