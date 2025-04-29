@@ -14,17 +14,20 @@ import {
   Grid,
   Card,
   CardContent,
+  IconButton,
   ThemeProvider,
+  createTheme,
   CssBaseline,
+  useMediaQuery
 } from '@mui/material';
-import { CloudUpload, Publish, Refresh, Description } from '@mui/icons-material';
+import { CloudUpload, Publish, Refresh, Description, Brightness4, Brightness7 } from '@mui/icons-material';
 import axios from 'axios';
 import StatusMessage from './components/StatusMessage';
-import ThemeToggle from './components/ThemeToggle';
-import { lightTheme, darkTheme } from './theme';
 import './App.css';
 
 function App() {
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
+  const [isDarkMode, setIsDarkMode] = useState(prefersDarkMode);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [isConverting, setIsConverting] = useState(false);
@@ -33,9 +36,22 @@ function App() {
   const [success, setSuccess] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [showStatus, setShowStatus] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const theme = isDarkMode ? darkTheme : lightTheme;
+  const theme = createTheme({
+    palette: {
+      mode: isDarkMode ? 'dark' : 'light',
+      primary: {
+        main: '#4ec07d',
+      },
+      secondary: {
+        main: '#ef8d9c',
+      },
+      background: {
+        default: isDarkMode ? '#121212' : '#f5f5f5',
+        paper: isDarkMode ? '#1e1e1e' : '#ffffff',
+      },
+    },
+  });
 
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
@@ -163,8 +179,21 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
       <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box sx={{ 
+          position: 'fixed', 
+          top: 16, 
+          right: 16, 
+          zIndex: 1000,
+          backgroundColor: theme.palette.background.paper,
+          borderRadius: '50%',
+          boxShadow: 2,
+        }}>
+          <IconButton onClick={toggleTheme} color="inherit" size="large">
+            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
+        </Box>
+
         <Box sx={{ mb: 4, textAlign: 'center' }}>
           <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
             Price List Publisher

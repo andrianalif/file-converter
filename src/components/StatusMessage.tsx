@@ -50,7 +50,9 @@ const MessageBox = styled(Box)<MessageBoxProps>(({ theme, messagetype }) => ({
     ? 'linear-gradient(to bottom right, #b0db7d 40%, #99dbb4 100%)'
     : 'linear-gradient(to bottom left, #ef8d9c 40%, #ffc39e 100%)',
   borderRadius: '20px',
-  boxShadow: '5px 5px 20px rgba(203, 205, 211, 0.1)',
+  boxShadow: theme.palette.mode === 'dark' 
+    ? '0 8px 32px rgba(0, 0, 0, 0.3)' 
+    : '5px 5px 20px rgba(203, 205, 211, 0.1)',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
@@ -63,9 +65,9 @@ const MessageBox = styled(Box)<MessageBoxProps>(({ theme, messagetype }) => ({
 const Face = styled(Box)(({ theme }) => ({
   width: '22%',
   height: '22%',
-  background: '#fcfcfc',
+  background: theme.palette.mode === 'dark' ? '#2f2f2f' : '#fcfcfc',
   borderRadius: '50%',
-  border: '1px solid #777',
+  border: `1px solid ${theme.palette.mode === 'dark' ? '#555' : '#777'}`,
   position: 'relative',
   marginBottom: '20px',
   display: 'flex',
@@ -82,7 +84,7 @@ const Face = styled(Box)(({ theme }) => ({
 const Eye = styled(Box)(({ theme }) => ({
   width: '5px',
   height: '5px',
-  background: '#777',
+  background: theme.palette.mode === 'dark' ? '#999' : '#777',
   borderRadius: '50%',
   position: 'absolute',
   top: '40%',
@@ -101,8 +103,8 @@ const Mouth = styled(Box)<MouthProps>(({ theme, messagetype }) => ({
   borderRadius: '50%',
   border: '2px solid',
   borderColor: messagetype === 'success' 
-    ? 'transparent #777 #777 transparent'
-    : '#777 transparent transparent #777',
+    ? `transparent ${theme.palette.mode === 'dark' ? '#999' : '#777'} ${theme.palette.mode === 'dark' ? '#999' : '#777'} transparent`
+    : `${theme.palette.mode === 'dark' ? '#999' : '#777'} transparent transparent ${theme.palette.mode === 'dark' ? '#999' : '#777'}`,
   transform: 'rotate(45deg)',
   top: messagetype === 'success' ? '43%' : '49%',
   left: '41%',
@@ -112,8 +114,8 @@ const Shadow = styled(Box)<ShadowProps>(({ theme, messagetype }) => ({
   position: 'absolute',
   width: '21%',
   height: '3%',
-  opacity: 0.5,
-  background: '#777',
+  opacity: theme.palette.mode === 'dark' ? 0.3 : 0.5,
+  background: theme.palette.mode === 'dark' ? '#999' : '#777',
   left: '40%',
   top: '43%',
   borderRadius: '50%',
@@ -143,17 +145,19 @@ const Message = styled(Box)(({ theme }) => ({
 }));
 
 const ActionButton = styled(Button)<ActionButtonProps>(({ theme, messagetype }) => ({
-  background: '#fcfcfc',
+  background: theme.palette.mode === 'dark' ? '#2f2f2f' : '#fcfcfc',
   width: '50%',
   height: '15%',
   borderRadius: '20px',
   marginTop: '20px',
   outline: 0,
   border: 'none',
-  boxShadow: '2px 2px 10px rgba(119, 119, 119, 0.5)',
+  boxShadow: theme.palette.mode === 'dark' 
+    ? '0 4px 12px rgba(0, 0, 0, 0.3)' 
+    : '2px 2px 10px rgba(119, 119, 119, 0.5)',
   transition: 'all 0.5s ease-in-out',
   '&:hover': {
-    background: '#efefef',
+    background: theme.palette.mode === 'dark' ? '#3f3f3f' : '#efefef',
     transform: 'scale(1.05)',
   },
 }));
