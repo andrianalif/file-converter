@@ -23,6 +23,8 @@ import {
 import { CloudUpload, Publish, Refresh, Description, Brightness4, Brightness7 } from '@mui/icons-material';
 import axios from 'axios';
 import StatusMessage from './components/StatusMessage';
+import ExcelPreview from './components/ExcelPreview';
+import { ValidationError } from './types';
 import './App.css';
 
 function App() {
@@ -36,6 +38,7 @@ function App() {
   const [success, setSuccess] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [showStatus, setShowStatus] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
 
   const theme = createTheme({
     palette: {
@@ -81,9 +84,19 @@ function App() {
     multiple: false
   });
 
+  const handleValidationComplete = (errors: ValidationError[]) => {
+    setValidationErrors(errors);
+  };
+
   const handleConvert = async () => {
     if (!file) {
       setError('Please select a file');
+      setShowStatus(true);
+      return;
+    }
+
+    if (validationErrors.length > 0) {
+      setError('Please fix validation errors before converting');
       setShowStatus(true);
       return;
     }
@@ -273,7 +286,7 @@ function App() {
                     variant="contained"
                     color="primary"
                     onClick={handleConvert}
-                    disabled={!file || isConverting || activeStep > 0}
+                    disabled={!file || isConverting || activeStep > 0 || validationErrors.length > 0}
                     startIcon={isConverting ? <CircularProgress size={20} /> : <Refresh />}
                   >
                     {isConverting ? 'Converting...' : 'Convert'}
@@ -302,6 +315,13 @@ function App() {
             </Card>
           </Grid>
         </Grid>
+
+        {file && (
+          <ExcelPreview
+            file={file}
+            onValidationComplete={handleValidationComplete}
+          />
+        )}
 
         {showStatus && (
           <StatusMessage
