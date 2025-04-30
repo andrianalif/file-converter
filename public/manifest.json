@@ -1,11 +1,21 @@
 {
-  "short_name": "File Converter",
-  "name": "File Converter & WordPress Publisher",
+  "short_name": "VST ECS",
+  "name": "VST ECS - Price List Publisher",
   "icons": [
     {
-      "src": "favicon.ico",
+      "src": "images/logo.png",
       "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "type": "image/png"
+    },
+    {
+      "src": "images/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "images/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
   ],
   "start_url": ".",

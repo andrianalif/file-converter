@@ -18,7 +18,9 @@ import {
   ThemeProvider,
   createTheme,
   CssBaseline,
-  useMediaQuery
+  useMediaQuery,
+  AppBar,
+  Toolbar,
 } from '@mui/material';
 import { CloudUpload, Publish, Refresh, Description, Brightness4, Brightness7 } from '@mui/icons-material';
 import axios from 'axios';
@@ -192,27 +194,33 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Box sx={{ 
-          position: 'fixed', 
-          top: 16, 
-          right: 16, 
-          zIndex: 1000,
-          backgroundColor: theme.palette.background.paper,
-          borderRadius: '50%',
-          boxShadow: 2,
-        }}>
-          <IconButton onClick={toggleTheme} color="inherit" size="large">
-            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
-          </IconButton>
-        </Box>
-
-        <Box sx={{ mb: 4, textAlign: 'center' }}>
-          <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+      <AppBar position="static" color="default" elevation={1}>
+        <Toolbar>
+          <Box
+            component="img"
+            src="/images/logo.png"
+            alt="VST ECS Logo"
+            sx={{
+              height: 40,
+              mr: 2,
+              objectFit: 'contain'
+            }}
+          />
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Price List Publisher
           </Typography>
+          <IconButton onClick={toggleTheme} color="inherit">
+            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box sx={{ mb: 4, textAlign: 'center' }}>
+          <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+            Convert and Publish Your Price Lists
+          </Typography>
           <Typography variant="subtitle1" color="text.secondary">
-            Convert and publish your Excel price lists to WordPress
+            Upload your Excel file and we'll help you convert it to a beautiful price list page
           </Typography>
         </Box>
 
