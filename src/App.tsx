@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   Container,
@@ -22,12 +22,20 @@ import {
   AppBar,
   Toolbar,
 } from '@mui/material';
-import { CloudUpload, Publish, Refresh, Description, Brightness4, Brightness7 } from '@mui/icons-material';
+import { CloudUpload, Publish, Refresh, Description, Brightness4, Brightness7, History as HistoryIcon } from '@mui/icons-material';
 import axios from 'axios';
 import StatusMessage from './components/StatusMessage';
 import ExcelPreview from './components/ExcelPreview';
+import HistoryDialog from './components/HistoryDialog';
 import { ValidationError } from './types';
 import './App.css';
+
+interface HistoryItem {
+  id: string;
+  title: string;
+  date: string;
+  url?: string;
+}
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -39,6 +47,8 @@ function App() {
   const [activeStep, setActiveStep] = useState(0);
   const [showStatus, setShowStatus] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const theme = createTheme({
     palette: {
@@ -63,6 +73,33 @@ function App() {
   });
 
   const steps = ['Upload', 'Convert', 'Publish'];
+
+  // Load history from localStorage on component mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('conversionHistory');
+    if (savedHistory) {
+      setHistory(JSON.parse(savedHistory));
+    }
+  }, []);
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('conversionHistory', JSON.stringify(history));
+  }, [history]);
+
+  const addToHistory = (title: string, url?: string) => {
+    const newItem: HistoryItem = {
+      id: Date.now().toString(),
+      title,
+      date: new Date().toISOString(),
+      url,
+    };
+    setHistory(prev => [newItem, ...prev].slice(0, 50)); // Keep last 50 items
+  };
+
+  const deleteFromHistory = (id: string) => {
+    setHistory(prev => prev.filter(item => item.id !== id));
+  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -164,6 +201,7 @@ function App() {
 
       if (response.data.url) {
         setSuccess(`File published successfully! URL: ${response.data.url}`);
+        addToHistory(title, response.data.url);
       } else {
         setError('Publish successful but no URL returned');
       }
@@ -209,6 +247,13 @@ function App() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
             Price List Publisher
           </Typography>
+          <IconButton
+            color="inherit"
+            onClick={() => setShowHistory(true)}
+            title="View History"
+          >
+            <HistoryIcon />
+          </IconButton>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -342,10 +387,17 @@ function App() {
         <div className="footer-content">
           <p>© {new Date().getFullYear()} VSTECS Frontier. All rights reserved.</p>
           <hr className="footer-divider" />
-          <p>For inquiries, please contact <a href="mailto:support@vstecs.ai">support@vstecs.ai</a></p>
+          <p>For inquiries, please contact <a href="mailto:alif.adrian@vstecsindo.com">alif.adrian@vstecsindo.com</a></p>
           <p>This price list is automatically generated and updated.</p>
         </div>
       </footer>
+
+      <HistoryDialog
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        history={history}
+        onDelete={deleteFromHistory}
+      />
     </ThemeProvider>
   );
 }
