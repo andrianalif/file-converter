@@ -30,8 +30,6 @@ import { ValidationError } from './types';
 import './App.css';
 
 function App() {
-  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
-  const [isDarkMode, setIsDarkMode] = useState(prefersDarkMode);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [isConverting, setIsConverting] = useState(false);
@@ -44,7 +42,7 @@ function App() {
 
   const theme = createTheme({
     palette: {
-      mode: isDarkMode ? 'dark' : 'light',
+      mode: 'light',
       primary: {
         main: '#4ec07d',
       },
@@ -52,15 +50,17 @@ function App() {
         main: '#ef8d9c',
       },
       background: {
-        default: isDarkMode ? '#121212' : '#f5f5f5',
-        paper: isDarkMode ? '#1e1e1e' : '#ffffff',
+        default: '#f5f5f5',
+        paper: '#ffffff',
+      },
+    },
+    typography: {
+      fontFamily: "'Poppins', sans-serif",
+      h6: {
+        fontWeight: 600,
       },
     },
   });
-
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-  };
 
   const steps = ['Upload', 'Convert', 'Publish'];
 
@@ -206,12 +206,9 @@ function App() {
               objectFit: 'contain'
             }}
           />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
             Price List Publisher
           </Typography>
-          <IconButton onClick={toggleTheme} color="inherit">
-            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
-          </IconButton>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 4 }}>
@@ -341,6 +338,14 @@ function App() {
           />
         )}
       </Container>
+      <footer className="footer">
+        <div className="footer-content">
+          <p>© {new Date().getFullYear()} VSTECS Frontier. All rights reserved.</p>
+          <hr className="footer-divider" />
+          <p>For inquiries, please contact <a href="mailto:support@vstecs.ai">support@vstecs.ai</a></p>
+          <p>This price list is automatically generated and updated.</p>
+        </div>
+      </footer>
     </ThemeProvider>
   );
 }
