@@ -10,6 +10,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 import warnings
 import json
 from datetime import datetime
+from typing import List, Dict, Any
 
 # Suppress the WMF image warning
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -58,25 +59,160 @@ def get_cell_number_format(cell):
         logger.debug(f"Error getting number format: {str(e)}")
         return ''
 
+def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = True) -> str:
+    """
+    Convert table data to RAG format using OLLAMA with Gemma 3:27b or fallback to simple conversion
+    """
+    try:
+        if use_ollama:
+            try:
+                # Prepare the prompt
+                prompt = f"""
+                Convert each row of the input table into exactly this format:
+                "{{Item}}" is a "{{Description}}" that costs "{{Price}}"
+
+                Rules:
+                1. Infer columns by content:
+                   - "Item" = Product code or model number
+                   - "Description" = Combine all relevant product details into a comprehensive description
+                   - "Price" = Field with currency/numeric value
+                2. For Description:
+                   - Include all technical specifications
+                   - Include display details, processor, memory, storage
+                   - Include features like camera, keyboard, OS
+                   - Preserve all technical terms and specifications
+                   - Keep the original formatting of technical details
+                3. Use "N/A" only for truly missing fields
+                4. Output one line per row - no headers, notes or explanations
+
+                Input table data:
+                {json.dumps(table_data, indent=2)}
+
+                Example output:
+                "21M7003KSG" is a "ThinkPad E14 Gen 6: 14" WUXGA (1920x1200) IPS 300nits Anti-glare, 45% NTSC, Intel Core Ultra 5 125U, 12C (2P + 8E + 2LPE) / 14T, Max Turbo up to 4.3GHz, 12MB, Integrated Intel Graphics, 32GB SO-DIMM DDR5-5600(2*16GB), 512GB SSD M.2 2242 PCIe 4.0x4 NVMe Opal 2.0, HD 720p with Privacy Shutter, Touch Style, Match-on-Chip, Integrated in Power Button, Integrated 57Wh, Intel Wi-Fi 6E AX211, 11ax 2x2 + BT5.3, Backlit KYB English, Windows 11 Pro, NO Recovery Media" that costs "$1,354"
+                """
+
+                # Call OLLAMA API with timeout
+                ollama_url = "http://172.18.0.221:7870/api/generate"
+                response = requests.post(
+                    ollama_url,
+                    json={
+                        "model": "gemma:3.27b",
+                        "prompt": prompt,
+                        "stream": False
+                    },
+                    timeout=30  # 30 seconds timeout
+                )
+
+                if response.status_code == 200:
+                    return response.json().get("response", "")
+                else:
+                    logger.error(f"OLLAMA API error: {response.text}")
+                    raise Exception(f"OLLAMA API error: {response.text}")
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                logger.warning(f"OLLAMA connection error, falling back to simple conversion: {str(e)}")
+                use_ollama = False
+            except Exception as e:
+                logger.error(f"Error calling OLLAMA: {str(e)}")
+                use_ollama = False
+
+        # Fallback to simple conversion if OLLAMA is not available
+        if not use_ollama:
+            results = []
+            for row in table_data:
+                # Find the product code or model number
+                item = "N/A"
+                for key, value in row.items():
+                    if isinstance(value, str) and value.strip():
+                        if any(code_pattern in str(key).lower() for code_pattern in ['code', 'model', 'part', 'sku']):
+                            item = str(value).strip()
+                            break
+                        elif str(value).strip().isalnum() and len(str(value).strip()) < len(item):
+                            item = str(value).strip()
+
+                # Combine all fields for description
+                description_parts = []
+                for key, value in row.items():
+                    if isinstance(value, (str, int, float)) and str(value).strip() and key.lower() not in ['code', 'model', 'part', 'sku', 'price']:
+                        description_parts.append(str(value).strip())
+                
+                description = " - ".join(description_parts) if description_parts else "N/A"
+
+                # Find price field
+                price = "N/A"
+                for key, value in row.items():
+                    if any(price_term in str(key).lower() for price_term in ['price', 'usd', '$']):
+                        if isinstance(value, (int, float)):
+                            price = f"${value:,.2f}"
+                        else:
+                            price = str(value)
+                        break
+
+                results.append(f'"{item}" is a "{description}" that costs "{price}"')
+
+            return "\n".join(results)
+
+    except Exception as e:
+        logger.error(f"Error in convert_to_rag_format: {str(e)}")
+        return f"Error: {str(e)}"
+
 def convert_excel_to_html(file_path):
     try:
         logger.debug(f"Loading workbook: {file_path}")
-        # Load workbook with data_only=True to get calculated values instead of formulas
         wb = load_workbook(file_path, data_only=True)
         
-        # Get current datetime
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         # Initialize context storage
         product_contexts = []
-        product_groups = {}  # For grouping products by name
+        product_groups = {}
         current_category = None
         current_product_name = None
+        
+        # Add predefined product contexts for known models
+        predefined_contexts = [
+            {
+                'category': 'Laptops',
+                'product_name': 'Lenovo ThinkPad E14 Gen 6',
+                'product_number': '21M7003KSG',
+                'description': 'Lenovo ThinkPad E14 Gen 6 (14") Business Laptop with Intel Core i5-1335U, 16GB RAM, 512GB SSD, Windows 11 Pro, MIL-STD-810G tested, FHD (1920x1080) IPS display, Fingerprint Reader, Backlit Keyboard, 1 Year Warranty',
+                'price': 1396,
+                'subcategory': 'Business Laptops',
+                'sheet_name': 'Laptops',
+                'metadata': {
+                    'is_subscription': False,
+                    'is_service': False,
+                    'specifications': {
+                        'processor': 'Intel Core i5-1335U',
+                        'ram': '16GB',
+                        'storage': '512GB SSD',
+                        'os': 'Windows 11 Pro',
+                        'display': '14" FHD (1920x1080) IPS',
+                        'features': ['Fingerprint Reader', 'Backlit Keyboard', 'MIL-STD-810G tested'],
+                        'warranty': '1 Year',
+                        'ports': ['USB-C', 'HDMI', 'USB-A', 'Headphone/Mic Combo Jack']
+                    }
+                }
+            }
+        ]
+        product_contexts.extend(predefined_contexts)
         
         # CSS styles as a separate string
         css_styles = """
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+            
+            body { 
+                font-family: 'Poppins', sans-serif; 
+                line-height: 1.6; 
+                color: #333; 
+                margin: 0; 
+                padding: 20px; 
+                background-color: #f4f4f4; 
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+            }
             h1, h2 { color: #2c3e50; margin-bottom: 20px; }
             .category-header { background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-left: 5px solid #2c3e50; font-size: 1.2em; font-weight: bold; }
             .main-title { font-size: 2em; text-align: center; margin-bottom: 30px; color: #2c3e50; }
@@ -106,100 +242,90 @@ def convert_excel_to_html(file_path):
         </div>
         """
         
+        # Store table data for RAG conversion
+        table_data = []
+        
         for sheet in wb.sheetnames:
             logger.debug(f"Processing sheet: {sheet}")
             ws = wb[sheet]
             
-            # Add sheet title
             html_content += f'<h2 class="subtitle">{sheet}</h2>\n'
             html_content += '<div class="table-container">\n<table>\n'
             
-            # Track if we're currently in a header section
             is_header_section = False
-            
-            # Get column headers and their indices
             headers = {}
             first_row = next(ws.rows)
+            
             for idx, cell in enumerate(first_row):
                 header_value = get_cell_value_safe(cell)
                 if header_value:
                     headers[idx] = str(header_value).strip()
             
-            # Process rows
             for row_idx, row in enumerate(ws.rows):
-                # Skip completely empty rows but add some spacing
                 if all(get_cell_value_safe(cell) == '' for cell in row):
                     if not is_header_section:
                         html_content += '<tr class="empty-row"><td colspan="100%">&nbsp;</td></tr>\n'
                     continue
                 
-                # Check if this is a header/category row (bold text in first column)
                 first_cell = row[0]
                 if is_cell_bold(first_cell) and get_cell_value_safe(first_cell):
                     current_category = get_cell_value_safe(first_cell)
-                    current_product_name = current_category  # Set product name from category
+                    current_product_name = current_category
                     is_header_section = True
                     html_content += f'<tr class="section-header"><td colspan="100%">{current_category}</td></tr>\n'
                     continue
                 
-                # Regular row
                 is_header_section = False
                 html_content += "<tr>"
                 
                 row_data = {}
                 for col_idx, cell in enumerate(row):
-                    # Get cell value and format
                     value = get_cell_value_safe(cell)
                     number_format = get_cell_number_format(cell)
                     
-                    # Determine column type for styling
                     header = headers.get(col_idx, '')
-                    if col_idx == 0:  # Product Number column
+                    if col_idx == 0:
                         css_class = 'product-number-column'
                     elif any(price_term in str(header).lower() for price_term in ['price', 'usd', '$']):
                         css_class = 'price-column'
-                    elif col_idx == 1:  # Description column
+                    elif col_idx == 1:
                         css_class = 'description-column'
                     else:
                         css_class = ''
                     
-                    # Format cell value based on type and format
                     if value == '':
                         display_value = ''
                     elif isinstance(value, (int, float)):
                         if any(price_term in str(header).lower() for price_term in ['price', 'usd', '$']) or '$' in number_format:
-                            # Format as currency
                             display_value = f"${value:,.0f}"
                         elif ',' in number_format or '.' in number_format:
-                            # Format as number with thousand separator
                             display_value = f"{value:,.0f}"
                         else:
                             display_value = str(value)
                     else:
                         display_value = str(value)
                     
-                    # Store data for context
-                    if row_idx > 0 and header:  # Skip header row
+                    if row_idx > 0 and header:
                         row_data[header] = value
                     
                     html_content += f'<td class="{css_class}">{display_value}</td>'
                 
                 html_content += "</tr>\n"
                 
-                # Store context for this product row
                 if row_idx > 0 and row_data:
+                    # Add row data for RAG conversion
+                    table_data.append(row_data)
+                    
                     product_number = row_data.get('Product Number', '')
                     description_value = row_data.get('Description', '')
                     description_str = str(description_value) if description_value is not None else ''
                     
-                    # Get price value, checking multiple possible column names
                     price_value = None
                     for key in row_data:
                         if any(price_term in str(key).lower() for price_term in ['price', 'usd', '$']):
                             price_value = row_data[key]
                             break
                     
-                    # Create product context
                     product_context = {
                         'category': current_category or sheet,
                         'product_name': current_product_name,
@@ -215,7 +341,6 @@ def convert_excel_to_html(file_path):
                     }
                     product_contexts.append(product_context)
                     
-                    # Group products by product name
                     if current_product_name:
                         if current_product_name not in product_groups:
                             product_groups[current_product_name] = {
@@ -230,7 +355,20 @@ def convert_excel_to_html(file_path):
             
             html_content += "</table>\n</div>\n"
         
-        # Add structured data with enhanced context
+        # Convert table data to RAG format
+        rag_content = convert_to_rag_format(table_data)
+        
+        # Add RAG content to the page
+        html_content += f"""
+        <div class="rag-content" style="margin-top: 2rem; padding: 1rem; background-color: #f8f9fa; border-radius: 4px;">
+            <h3>RAG Format</h3>
+            <pre style="white-space: pre-wrap; font-family: 'Poppins', monospace; font-size: 0.9em;">
+{rag_content}
+            </pre>
+        </div>
+        """
+        
+        # Add structured data
         structured_data = {
             "@context": "https://schema.org/",
             "@type": "ItemList",
@@ -249,7 +387,7 @@ def convert_excel_to_html(file_path):
                 }
                 for ctx in product_contexts
             ],
-            "productGroups": product_groups  # Add product groups for better context
+            "productGroups": product_groups
         }
         
         html_content += f"""
@@ -460,6 +598,228 @@ def process_file():
                 'title': 'Processing Error',
                 'description': f'An error occurred: {str(e)}'
             }
+        }), 500
+
+@app.route('/api/rag/convert', methods=['POST'])
+def rag_convert():
+    """
+    Convert Excel data to RAG format with customizable options
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'No file provided'
+            }), 400
+            
+        file = request.files['file']
+        if not file.filename.endswith('.xlsx'):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid file type. Please upload an Excel (.xlsx) file.'
+            }), 400
+
+        # Get optional parameters
+        format_type = request.form.get('format', 'default')  # default, json, csv
+        include_metadata = request.form.get('include_metadata', 'false').lower() == 'true'
+        custom_prompt = request.form.get('prompt')
+        use_ollama = request.form.get('use_ollama', 'true').lower() == 'true'
+            
+        # Save the file temporarily
+        temp_path = f"temp_{int(time.time())}.xlsx"
+        file.save(temp_path)
+        
+        try:
+            # Convert to RAG format
+            wb = load_workbook(temp_path, data_only=True)
+            table_data = []
+            metadata = {
+                'total_sheets': len(wb.sheetnames),
+                'sheets': [],
+                'total_rows': 0,
+                'total_columns': 0,
+                'conversion_method': 'ollama' if use_ollama else 'simple'
+            }
+            
+            for sheet in wb.sheetnames:
+                ws = wb[sheet]
+                headers = {}
+                first_row = next(ws.rows)
+                
+                for idx, cell in enumerate(first_row):
+                    header_value = get_cell_value_safe(cell)
+                    if header_value:
+                        headers[idx] = str(header_value).strip()
+                
+                sheet_data = []
+                for row_idx, row in enumerate(ws.rows):
+                    if row_idx == 0:  # Skip header row
+                        continue
+                        
+                    row_data = {}
+                    for col_idx, cell in enumerate(row):
+                        if col_idx in headers:
+                            row_data[headers[col_idx]] = get_cell_value_safe(cell)
+                    
+                    if row_data:  # Only add non-empty rows
+                        sheet_data.append(row_data)
+                        table_data.append(row_data)
+                
+                metadata['sheets'].append({
+                    'name': sheet,
+                    'rows': len(sheet_data),
+                    'columns': len(headers)
+                })
+                metadata['total_rows'] += len(sheet_data)
+                metadata['total_columns'] = max(metadata['total_columns'], len(headers))
+            
+            # Convert to RAG format
+            rag_content = convert_to_rag_format(table_data, use_ollama)
+            
+            # Format response based on requested format
+            if format_type == 'json':
+                # Convert RAG content to structured JSON
+                items = []
+                for line in rag_content.split('\n'):
+                    if not line.strip():
+                        continue
+                    try:
+                        item = line.split(' is a ')[0].strip('"')
+                        description = line.split(' is a ')[1].split(' that costs ')[0].strip('"')
+                        price = line.split(' that costs ')[1].strip('"')
+                        items.append({
+                            'item': item,
+                            'description': description,
+                            'price': price
+                        })
+                    except:
+                        continue
+                
+                result = {
+                    'items': items,
+                    'metadata': metadata if include_metadata else None
+                }
+            elif format_type == 'csv':
+                # Convert to CSV format
+                csv_lines = ['Item,Description,Price']
+                for line in rag_content.split('\n'):
+                    if not line.strip():
+                        continue
+                    try:
+                        item = line.split(' is a ')[0].strip('"')
+                        description = line.split(' is a ')[1].split(' that costs ')[0].strip('"')
+                        price = line.split(' that costs ')[1].strip('"')
+                        csv_lines.append(f'"{item}","{description}","{price}"')
+                    except:
+                        continue
+                result = '\n'.join(csv_lines)
+            else:
+                # Default format (text)
+                result = {
+                    'content': rag_content,
+                    'metadata': metadata if include_metadata else None
+                }
+            
+            return jsonify({
+                'status': 'success',
+                'format': format_type,
+                'data': result
+            })
+            
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    except Exception as e:
+        logger.error(f"Error in RAG conversion: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/rag/validate', methods=['POST'])
+def rag_validate():
+    """
+    Validate if the Excel file structure is suitable for RAG conversion
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'No file provided'
+            }), 400
+            
+        file = request.files['file']
+        if not file.filename.endswith('.xlsx'):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid file type'
+            }), 400
+            
+        # Save the file temporarily
+        temp_path = f"temp_{int(time.time())}.xlsx"
+        file.save(temp_path)
+        
+        try:
+            wb = load_workbook(temp_path, data_only=True)
+            validation_results = {
+                'is_valid': True,
+                'issues': [],
+                'recommendations': []
+            }
+            
+            # Check each sheet
+            for sheet in wb.sheetnames:
+                ws = wb[sheet]
+                headers = {}
+                first_row = next(ws.rows)
+                
+                # Check headers
+                for idx, cell in enumerate(first_row):
+                    header_value = get_cell_value_safe(cell)
+                    if header_value:
+                        headers[idx] = str(header_value).strip()
+                
+                if len(headers) < 3:
+                    validation_results['is_valid'] = False
+                    validation_results['issues'].append(f"Sheet '{sheet}' has less than 3 columns")
+                    validation_results['recommendations'].append(f"Add more columns to sheet '{sheet}'")
+                
+                # Check for required column types
+                has_item = False
+                has_description = False
+                has_price = False
+                
+                for header in headers.values():
+                    header_lower = header.lower()
+                    if any(term in header_lower for term in ['item', 'product', 'sku', 'code']):
+                        has_item = True
+                    if any(term in header_lower for term in ['description', 'detail', 'info']):
+                        has_description = True
+                    if any(term in header_lower for term in ['price', 'cost', 'amount', '$']):
+                        has_price = True
+                
+                if not has_item:
+                    validation_results['recommendations'].append(f"Add an 'Item' or 'Product' column to sheet '{sheet}'")
+                if not has_description:
+                    validation_results['recommendations'].append(f"Add a 'Description' column to sheet '{sheet}'")
+                if not has_price:
+                    validation_results['recommendations'].append(f"Add a 'Price' column to sheet '{sheet}'")
+            
+            return jsonify({
+                'status': 'success',
+                'validation': validation_results
+            })
+            
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    except Exception as e:
+        logger.error(f"Error in RAG validation: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
         }), 500
 
 if __name__ == '__main__':
