@@ -73,23 +73,64 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
 
                 Rules:
                 1. Infer columns by content:
-                   - "Item" = Product code or model number
+                   - "Item" = Product code, model number, MTM, Series, or SKU (including those with #)
                    - "Description" = Combine all relevant product details into a comprehensive description
-                   - "Price" = Field with currency/numeric value
-                2. For Description:
-                   - Include all technical specifications
-                   - Include display details, processor, memory, storage
-                   - Include features like camera, keyboard, OS
-                   - Preserve all technical terms and specifications
-                   - Keep the original formatting of technical details
-                3. Use "N/A" only for truly missing fields
-                4. Output one line per row - no headers, notes or explanations
+                   - "Price" = Field with currency/numeric value (USD, SGD, SRP, Disti Price, Reseller Price)
+                2. For Description, include ALL of the following in order:
+                   a. Product Type and Model:
+                      - Product family (e.g., Desktop, Laptop, Workstation)
+                      - Model name and generation
+                      - Platform type (e.g., Intel SoC Platform)
+                   
+                   b. Processor Details:
+                      - Full processor name (e.g., Intel® Core™ i7-13620H)
+                      - Core configuration (e.g., 10C (6P + 4E) / 16T)
+                      - Clock speeds for all core types (e.g., P-core 2.4 / 4.9GHz, E-core 1.8 / 3.6GHz)
+                      - Cache size (e.g., 24MB)
+                   
+                   c. Memory and Storage:
+                      - RAM type, size, and speed (e.g., 16GB SO-DIMM DDR5-5200)
+                      - Storage type, size, and interface (e.g., 512GB SSD M.2 2280 PCIe® 4.0x4 NVMe®)
+                   
+                   d. Graphics:
+                      - Graphics type and model (e.g., Integrated Intel® UHD Graphics)
+                   
+                   e. Connectivity:
+                      - Wireless specifications (e.g., Intel® Wi-Fi® 6 AX203, 802.11ax 2x2 + BT5.2)
+                      - Port types and configurations
+                   
+                   f. Input Devices:
+                      - Keyboard type (e.g., USB Keyboard)
+                      - Mouse type (e.g., USB Mouse)
+                   
+                   g. Operating System:
+                      - OS version and edition (e.g., Windows® 11 Pro)
+                      - Language
+                      - Recovery media status (e.g., NO Recovery Media)
+                   
+                   h. Additional Features:
+                      - Warranty information
+                      - Special conditions or remarks
+                      - Any other technical specifications
+                3. For Price:
+                   - Use USD if specified
+                   - Use Suggested Retail Price (SRP) if available
+                   - Fall back to Disti Price if SRP not available
+                   - Include currency (USD/SGD) if specified
+                   - Use "N/A" only for truly missing fields
+                4. Additional Context:
+                   - Include Bundle Type if available
+                   - Include Product Family information
+                   - Include Order Reason Code if present
+                   - Include Special Conditions/UPC Code
+                   - Include Additional Information
+                5. Output one line per row - no headers, notes or explanations
 
                 Input table data:
                 {json.dumps(table_data, indent=2)}
 
                 Example output:
-                "21M7003KSG" is a "ThinkPad E14 Gen 6: 14" WUXGA (1920x1200) IPS 300nits Anti-glare, 45% NTSC, Intel Core Ultra 5 125U, 12C (2P + 8E + 2LPE) / 14T, Max Turbo up to 4.3GHz, 12MB, Integrated Intel Graphics, 32GB SO-DIMM DDR5-5600(2*16GB), 512GB SSD M.2 2242 PCIe 4.0x4 NVMe Opal 2.0, HD 720p with Privacy Shutter, Touch Style, Match-on-Chip, Integrated in Power Button, Integrated 57Wh, Intel Wi-Fi 6E AX211, 11ax 2x2 + BT5.3, Backlit KYB English, Windows 11 Pro, NO Recovery Media" that costs "$1,354"
+                "TC30S5" is a "Desktop TC neo 30s Gen 5: Intel® SoC Platform - Intel® Core™ i7-13620H, 10C (6P + 4E) / 16T, P-core 2.4 / 4.9GHz, E-core 1.8 / 3.6GHz, 24MB - 16GB SO-DIMM DDR5-5200/ 512GB SSD M.2 2280 PCIe® 4.0x4 NVMe® - Graphics: Integrated Intel® UHD Graphics - Intel® Wi-Fi® 6 AX203, 802.11ax 2x2 + BT5.2 - USB Keyboard / Mouse - Windows® 11 Pro, English / NO Recovery Media" that costs "USD 1,354"
                 """
 
                 # Call OLLAMA API with timeout
@@ -124,7 +165,8 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 item = "N/A"
                 for key, value in row.items():
                     if isinstance(value, str) and value.strip():
-                        if any(code_pattern in str(key).lower() for code_pattern in ['code', 'model', 'part', 'sku']):
+                        key_lower = str(key).lower().replace('#', '')
+                        if any(code_pattern in key_lower for code_pattern in ['code', 'model', 'part', 'sku', 'mtm', 'series']):
                             item = str(value).strip()
                             break
                         elif str(value).strip().isalnum() and len(str(value).strip()) < len(item):
@@ -132,21 +174,43 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
 
                 # Combine all fields for description
                 description_parts = []
+                
+                # Handle Action field first if present
+                if 'Action' in row and row['Action']:
+                    description_parts.append(f"Action: {str(row['Action']).strip()}")
+                
+                # Handle other fields
                 for key, value in row.items():
-                    if isinstance(value, (str, int, float)) and str(value).strip() and key.lower() not in ['code', 'model', 'part', 'sku', 'price']:
-                        description_parts.append(str(value).strip())
+                    if isinstance(value, (str, int, float)) and str(value).strip():
+                        key_lower = str(key).lower().replace('#', '')
+                        if key_lower not in ['code', 'model', 'part', 'sku', 'mtm', 'series', 'price', 'srp', 'disti', 'reseller', 'usd', 'action']:
+                            description_parts.append(f"{key}: {str(value).strip()}")
                 
                 description = " - ".join(description_parts) if description_parts else "N/A"
 
-                # Find price field
+                # Find price field with priority
                 price = "N/A"
-                for key, value in row.items():
-                    if any(price_term in str(key).lower() for price_term in ['price', 'usd', '$']):
+                price_fields = [
+                    'USD',
+                    'Suggested Retail Price (SRP)',
+                    'SRP',
+                    'Disti Price',
+                    'Reseller Price',
+                    'Price'
+                ]
+                
+                for field in price_fields:
+                    if field in row:
+                        value = row[field]
                         if isinstance(value, (int, float)):
-                            price = f"${value:,.2f}"
-                        else:
-                            price = str(value)
-                        break
+                            if field == 'USD':
+                                price = f"USD {value:,.2f}"
+                            else:
+                                price = f"SGD {value:,.2f}"
+                            break
+                        elif isinstance(value, str) and value.strip():
+                            price = value.strip()
+                            break
 
                 results.append(f'"{item}" is a "{description}" that costs "{price}"')
 
@@ -326,12 +390,16 @@ def convert_excel_to_html(file_path):
                             price_value = row_data[key]
                             break
                     
+                    # Ambil warranty jika ada
+                    warranty_value = row_data.get('Warranty', '')
+                    
                     product_context = {
                         'category': current_category or sheet,
                         'product_name': current_product_name,
                         'product_number': product_number,
                         'description': description_str,
                         'price': price_value,
+                        'warranty': warranty_value,  # Tambahkan field warranty
                         'subcategory': current_category,
                         'sheet_name': sheet,
                         'metadata': {
@@ -379,6 +447,7 @@ def convert_excel_to_html(file_path):
                     "productNumber": ctx['product_number'],
                     "description": ctx['description'],
                     "category": ctx['category'],
+                    "warranty": ctx.get('warranty', ''),  # Tambahkan field warranty
                     "offers": {
                         "@type": "Offer",
                         "price": str(ctx['price']) if ctx['price'] is not None else '',
