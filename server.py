@@ -79,39 +79,50 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 2. For Description, include ALL of the following in order:
                    a. Product Type and Model:
                       - Product family (e.g., Desktop, Laptop, Workstation)
-                      - Model name and generation
-                      - Platform type (e.g., Intel SoC Platform)
+                      - Model name and generation (e.g., ThinkCentre M70s Gen 5)
+                      - Platform type and chipset (e.g., Intel SoC Platform, Q670 Chipset)
+                      - Form factor (e.g., SFF, Tower, All-in-One)
                    
                    b. Processor Details:
-                      - Full processor name (e.g., Intel® Core™ i7-13620H)
+                      - Full processor name with exact model number
                       - Core configuration (e.g., 10C (6P + 4E) / 16T)
-                      - Clock speeds for all core types (e.g., P-core 2.4 / 4.9GHz, E-core 1.8 / 3.6GHz)
-                      - Cache size (e.g., 24MB)
+                      - Clock speeds for all core types (e.g., P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz)
+                      - Cache size (e.g., 20MB)
                    
                    c. Memory and Storage:
-                      - RAM type, size, and speed (e.g., 16GB SO-DIMM DDR5-5200)
-                      - Storage type, size, and interface (e.g., 512GB SSD M.2 2280 PCIe® 4.0x4 NVMe®)
+                      - RAM type, size, and speed (e.g., 8GB UDIMM DDR5-4800)
+                      - Storage type, size, and interface (e.g., 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0)
+                      - Additional storage options (e.g., No ODD / 2.5" HDD Bracket Kit)
+                      - Internal components (e.g., Internal Speaker)
                    
                    d. Graphics:
-                      - Graphics type and model (e.g., Integrated Intel® UHD Graphics)
+                      - Graphics type and exact model number
+                      - VRAM size if applicable
+                      - Graphics features (e.g., DirectX support, OpenGL version)
                    
                    e. Connectivity:
-                      - Wireless specifications (e.g., Intel® Wi-Fi® 6 AX203, 802.11ax 2x2 + BT5.2)
-                      - Port types and configurations
+                      - Wireless specifications (e.g., Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro®)
+                      - Port types and configurations (e.g., HDMI / Display Port / LAN)
+                      - Network features (e.g., vPro®, Ethernet speed)
                    
                    f. Input Devices:
-                      - Keyboard type (e.g., USB Keyboard)
-                      - Mouse type (e.g., USB Mouse)
+                      - Keyboard type and features (e.g., USB Keyboard, Backlit)
+                      - Mouse type and features (e.g., USB Mouse, Wireless)
+                      - Additional input devices if included
                    
                    g. Operating System:
                       - OS version and edition (e.g., Windows® 11 Pro)
-                      - Language
+                      - Language version
                       - Recovery media status (e.g., NO Recovery Media)
+                      - Pre-installed software
                    
                    h. Additional Features:
-                      - Warranty information
+                      - Warranty information (e.g., 3 Year on-site)
+                      - Security features (e.g., TPM 2.0, Fingerprint Reader)
                       - Special conditions or remarks
                       - Any other technical specifications
+                      - Power supply details (e.g., 260W)
+                      - Environmental certifications
                 3. For Price:
                    - Use USD if specified
                    - Use Suggested Retail Price (SRP) if available
@@ -125,12 +136,14 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                    - Include Special Conditions/UPC Code
                    - Include Additional Information
                 5. Output one line per row - no headers, notes or explanations
+                6. Important: Always include ALL available specific details from the input data. Never use generic or unspecified values.
+                7. If a specific detail is not available in the input data, skip that detail rather than using a generic placeholder.
 
                 Input table data:
                 {json.dumps(table_data, indent=2)}
 
                 Example output:
-                "TC30S5" is a "Desktop TC neo 30s Gen 5: Intel® SoC Platform - Intel® Core™ i7-13620H, 10C (6P + 4E) / 16T, P-core 2.4 / 4.9GHz, E-core 1.8 / 3.6GHz, 24MB - 16GB SO-DIMM DDR5-5200/ 512GB SSD M.2 2280 PCIe® 4.0x4 NVMe® - Graphics: Integrated Intel® UHD Graphics - Intel® Wi-Fi® 6 AX203, 802.11ax 2x2 + BT5.2 - USB Keyboard / Mouse - Windows® 11 Pro, English / NO Recovery Media" that costs "USD 1,354"
+                "12U8005PSG" is a "ThinkCentre M70s Gen 5: 260W SFF (Q670 Chipset) - Intel® Core™ i5-14400, 10C (6P + 4E) / 16T, P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz, 20MB - 8GB UDIMM DDR5-4800 - 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0 / No ODD / 2.5" HDD Bracket Kit / Internal Speaker - Graphics: Integrated Intel® UHD Graphics 730 - Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro® - USB Keyboard / Mouse - HDMI / Display Port / LAN - Windows® 11 Pro, English / NO Recovery Media - 3 Year on-site" that costs "USD 1,399"
                 """
 
                 # Call OLLAMA API with timeout
