@@ -11,6 +11,7 @@ import warnings
 import json
 from datetime import datetime
 from typing import List, Dict, Any
+import re
 
 # Suppress the WMF image warning
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -61,7 +62,8 @@ def get_cell_number_format(cell):
 
 def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = True) -> str:
     """
-    Convert table data to RAG format using OLLAMA with Gemma 3:27b or fallback to simple conversion
+    Convert table data to RAG format focusing on product number, description, price, and machine type model
+    with enhanced searchability
     """
     try:
         if use_ollama:
@@ -69,81 +71,76 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 # Prepare the prompt
                 prompt = f"""
                 Convert each row of the input table into exactly this format:
-                "{{Item}}" is a "{{Description}}" that costs "{{Price}}"
+                SEARCH TERMS:
+                - Product Number: {{product_number}}
+                - SKU: {{sku}}
+                - Model: {{model}}
+                - Machine Type Model: {{mtm}}
+                - Part Number: {{part_number}}
+                - Series: {{series}}
+
+                DETAILS:
+                Description: {{description}}
+                Price: {{price}}
 
                 Rules:
-                1. Infer columns by content:
-                   - "Item" = Product code, model number, MTM, Series, or SKU (including those with #)
-                   - "Description" = Combine all relevant product details into a comprehensive description
-                   - "Price" = Field with currency/numeric value (USD, SGD, SRP, Disti Price, Reseller Price)
-                2. For Description, include ALL of the following in order:
-                   a. Product Type and Model:
-                      - Product family (e.g., Desktop, Laptop, Workstation)
-                      - Model name and generation (e.g., ThinkCentre M70s Gen 5)
-                      - Platform type and chipset (e.g., Intel SoC Platform, Q670 Chipset)
-                      - Form factor (e.g., SFF, Tower, All-in-One)
+                1. For Search Terms:
+                   - Extract ALL possible identifiers from the data
+                   - Include variations of product numbers and codes
+                   - If a field is empty, use "N/A"
+                   - Include both original and formatted versions of numbers
                    
-                   b. Processor Details:
-                      - Full processor name with exact model number
-                      - Core configuration (e.g., 10C (6P + 4E) / 16T)
-                      - Clock speeds for all core types (e.g., P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz)
-                      - Cache size (e.g., 20MB)
+                2. For Machine Type Model (MTM):
+                   - Extract the MTM code if present (usually 4-7 characters)
+                   - If not found, use "N/A"
                    
-                   c. Memory and Storage:
-                      - RAM type, size, and speed (e.g., 8GB UDIMM DDR5-4800)
-                      - Storage type, size, and interface (e.g., 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0)
-                      - Additional storage options (e.g., No ODD / 2.5" HDD Bracket Kit)
-                      - Internal components (e.g., Internal Speaker)
+                3. For Description:
+                   - Include only non-empty fields
+                   - Combine all relevant product details
+                   - Remove any empty or redundant information
+                   - Format in a clear, structured way
                    
-                   d. Graphics:
-                      - Graphics type and exact model number
-                      - VRAM size if applicable
-                      - Graphics features (e.g., DirectX support, OpenGL version)
-                   
-                   e. Connectivity:
-                      - Wireless specifications (e.g., Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro®)
-                      - Port types and configurations (e.g., HDMI / Display Port / LAN)
-                      - Network features (e.g., vPro®, Ethernet speed)
-                   
-                   f. Input Devices:
-                      - Keyboard type and features (e.g., USB Keyboard, Backlit)
-                      - Mouse type and features (e.g., USB Mouse, Wireless)
-                      - Additional input devices if included
-                   
-                   g. Operating System:
-                      - OS version and edition (e.g., Windows® 11 Pro)
-                      - Language version
-                      - Recovery media status (e.g., NO Recovery Media)
-                      - Pre-installed software
-                   
-                   h. Additional Features:
-                      - Warranty information (e.g., 3 Year on-site)
-                      - Security features (e.g., TPM 2.0, Fingerprint Reader)
-                      - Special conditions or remarks
-                      - Any other technical specifications
-                      - Power supply details (e.g., 260W)
-                      - Environmental certifications
-                3. For Price:
+                4. For Price:
                    - Use USD if specified
                    - Use Suggested Retail Price (SRP) if available
                    - Fall back to Disti Price if SRP not available
                    - Include currency (USD/SGD) if specified
                    - Use "N/A" only for truly missing fields
-                4. Additional Context:
-                   - Include Bundle Type if available
-                   - Include Product Family information
-                   - Include Order Reason Code if present
-                   - Include Special Conditions/UPC Code
-                   - Include Additional Information
-                5. Output one line per row - no headers, notes or explanations
-                6. Important: Always include ALL available specific details from the input data. Never use generic or unspecified values.
-                7. If a specific detail is not available in the input data, skip that detail rather than using a generic placeholder.
+                   
+                5. Additional Rules:
+                   - Skip any empty rows
+                   - Remove any columns that are completely empty
+                   - Format each product entry with clear line breaks
+                   - Use consistent formatting across all entries
+                   - Include ALL possible search terms that could identify the product
 
                 Input table data:
                 {json.dumps(table_data, indent=2)}
 
                 Example output:
-                "12U8005PSG" is a "ThinkCentre M70s Gen 5: 260W SFF (Q670 Chipset) - Intel® Core™ i5-14400, 10C (6P + 4E) / 16T, P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz, 20MB - 8GB UDIMM DDR5-4800 - 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0 / No ODD / 2.5" HDD Bracket Kit / Internal Speaker - Graphics: Integrated Intel® UHD Graphics 730 - Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro® - USB Keyboard / Mouse - HDMI / Display Port / LAN - Windows® 11 Pro, English / NO Recovery Media - 3 Year on-site" that costs "USD 1,399"
+                SEARCH TERMS:
+                - Product Number: 12U8005PSG
+                - SKU: 12U8005PSG
+                - Model: ThinkCentre M70s Gen 5
+                - Machine Type Model: 12U8
+                - Part Number: 12U8-005
+                - Series: ThinkCentre
+
+                DETAILS:
+                Description: ThinkCentre M70s Gen 5: 260W SFF (Q670 Chipset) - Intel® Core™ i5-14400, 10C (6P + 4E) / 16T, P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz, 20MB - 8GB UDIMM DDR5-4800 - 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0 / No ODD / 2.5" HDD Bracket Kit / Internal Speaker - Graphics: Integrated Intel® UHD Graphics 730 - Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro® - USB Keyboard / Mouse - HDMI / Display Port / LAN - Windows® 11 Pro, English / NO Recovery Media - 3 Year on-site
+                Price: USD 1,399
+
+                SEARCH TERMS:
+                - Product Number: 21M7003KSG
+                - SKU: 21M7003KSG
+                - Model: ThinkPad E14 Gen 6
+                - Machine Type Model: 21M7
+                - Part Number: 21M7-003
+                - Series: ThinkPad
+
+                DETAILS:
+                Description: ThinkPad E14 Gen 6 (14") Business Laptop with Intel Core i5-1335U, 16GB RAM, 512GB SSD, Windows 11 Pro, MIL-STD-810G tested, FHD (1920x1080) IPS display, Fingerprint Reader, Backlit Keyboard, 1 Year Warranty
+                Price: USD 1,396
                 """
 
                 # Call OLLAMA API with timeout
@@ -174,34 +171,56 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
         if not use_ollama:
             results = []
             for row in table_data:
-                # Find the product code or model number
-                item = "N/A"
+                # Skip empty rows
+                if not any(str(value).strip() for value in row.values()):
+                    continue
+
+                # Extract all possible identifiers
+                identifiers = {
+                    'product_number': "N/A",
+                    'sku': "N/A",
+                    'model': "N/A",
+                    'mtm': "N/A",
+                    'part_number': "N/A",
+                    'series': "N/A"
+                }
+
+                # Find all possible identifiers
                 for key, value in row.items():
                     if isinstance(value, str) and value.strip():
                         key_lower = str(key).lower().replace('#', '')
-                        if any(code_pattern in key_lower for code_pattern in ['code', 'model', 'part', 'sku', 'mtm', 'series']):
-                            item = str(value).strip()
-                            break
-                        elif str(value).strip().isalnum() and len(str(value).strip()) < len(item):
-                            item = str(value).strip()
+                        value = str(value).strip()
+                        
+                        if any(term in key_lower for term in ['product', 'code', 'number']):
+                            identifiers['product_number'] = value
+                        if 'sku' in key_lower:
+                            identifiers['sku'] = value
+                        if 'model' in key_lower:
+                            identifiers['model'] = value
+                        if 'part' in key_lower:
+                            identifiers['part_number'] = value
+                        if 'series' in key_lower:
+                            identifiers['series'] = value
+                        if 'mtm' in key_lower:
+                            identifiers['mtm'] = value
 
-                # Combine all fields for description
+                # Extract MTM from product number if not found
+                if identifiers['mtm'] == "N/A" and identifiers['product_number'] != "N/A":
+                    mtm_match = re.match(r'^([A-Z0-9]{4,7})', identifiers['product_number'])
+                    if mtm_match:
+                        identifiers['mtm'] = mtm_match.group(1)
+
+                # Combine non-empty fields for description
                 description_parts = []
-                
-                # Handle Action field first if present
-                if 'Action' in row and row['Action']:
-                    description_parts.append(f"Action: {str(row['Action']).strip()}")
-                
-                # Handle other fields
                 for key, value in row.items():
                     if isinstance(value, (str, int, float)) and str(value).strip():
                         key_lower = str(key).lower().replace('#', '')
-                        if key_lower not in ['code', 'model', 'part', 'sku', 'mtm', 'series', 'price', 'srp', 'disti', 'reseller', 'usd', 'action']:
+                        if key_lower not in ['code', 'model', 'part', 'sku', 'mtm', 'series', 'price', 'srp', 'disti', 'reseller', 'usd']:
                             description_parts.append(f"{key}: {str(value).strip()}")
-                
+
                 description = " - ".join(description_parts) if description_parts else "N/A"
 
-                # Find price field with priority
+                # Find price
                 price = "N/A"
                 price_fields = [
                     'USD',
@@ -225,7 +244,21 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                             price = value.strip()
                             break
 
-                results.append(f'"{item}" is a "{description}" that costs "{price}"')
+                # Format the output
+                result = f"""SEARCH TERMS:
+- Product Number: {identifiers['product_number']}
+- SKU: {identifiers['sku']}
+- Model: {identifiers['model']}
+- Machine Type Model: {identifiers['mtm']}
+- Part Number: {identifiers['part_number']}
+- Series: {identifiers['series']}
+
+DETAILS:
+Description: {description}
+Price: {price}
+
+"""
+                results.append(result)
 
             return "\n".join(results)
 
