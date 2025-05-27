@@ -62,8 +62,7 @@ def get_cell_number_format(cell):
 
 def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = True) -> str:
     """
-    Convert table data to RAG format focusing on product number, description, price, and machine type model
-    with enhanced searchability
+    Convert table data to RAG format with enhanced searchability and consistent structure
     """
     try:
         if use_ollama:
@@ -71,76 +70,109 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 # Prepare the prompt
                 prompt = f"""
                 Convert each row of the input table into exactly this format:
-                SEARCH TERMS:
+                PRODUCT IDENTIFIERS:
                 - Product Number: {{product_number}}
+                - Series: {{series}}
+                - Machine Type Model (MTM): {{mtm}}
                 - SKU: {{sku}}
                 - Model: {{model}}
-                - Machine Type Model: {{mtm}}
                 - Part Number: {{part_number}}
-                - Series: {{series}}
 
-                DETAILS:
+                PRODUCT DETAILS:
                 Description: {{description}}
-                Price: {{price}}
+                Warranty: {{warranty}}
+                Order Reason Code: {{order_reason}}
+                Special Conditions: {{special_conditions}}
+                Additional Information: {{additional_info}}
+
+                PRICING INFORMATION:
+                Global List Price: {{global_price}}
+                Disti Price: {{disti_price}}
+                Margin%: {{margin}}
+                Reseller Price: {{reseller_price}}
+                Suggested Retail Price (SRP): {{srp}}
+                SRP Inc Tax: {{srp_tax}}
 
                 Rules:
-                1. For Search Terms:
+                1. For Product Identifiers:
                    - Extract ALL possible identifiers from the data
-                   - Include variations of product numbers and codes
                    - If a field is empty, use "N/A"
+                   - For MTM, extract from product number if not explicitly provided
                    - Include both original and formatted versions of numbers
                    
-                2. For Machine Type Model (MTM):
-                   - Extract the MTM code if present (usually 4-7 characters)
-                   - If not found, use "N/A"
-                   
-                3. For Description:
+                2. For Product Details:
                    - Include only non-empty fields
                    - Combine all relevant product details
                    - Remove any empty or redundant information
                    - Format in a clear, structured way
                    
-                4. For Price:
-                   - Use USD if specified
-                   - Use Suggested Retail Price (SRP) if available
-                   - Fall back to Disti Price if SRP not available
-                   - Include currency (USD/SGD) if specified
-                   - Use "N/A" only for truly missing fields
+                3. For Pricing Information:
+                   - Include all available price fields
+                   - Format prices with currency (USD/SGD)
+                   - Include margin percentage if available
+                   - Include tax-inclusive price if available
+                   - Use "N/A" for missing values
                    
-                5. Additional Rules:
+                4. Additional Rules:
                    - Skip any empty rows
                    - Remove any columns that are completely empty
                    - Format each product entry with clear line breaks
                    - Use consistent formatting across all entries
                    - Include ALL possible search terms that could identify the product
+                   - Preserve all warranty information
+                   - Include order reason codes and special conditions
+                   - Add any additional information provided
 
                 Input table data:
                 {json.dumps(table_data, indent=2)}
 
-                Example output:
-                SEARCH TERMS:
+                Example output for Format 1 (Simple):
+                PRODUCT IDENTIFIERS:
+                - Product Number: SS-CV-ENT-1M
+                - Series: SS-CV
+                - Machine Type Model (MTM): SS-CV
+                - SKU: SS-CV-ENT-1M
+                - Model: SS-CV-ENT-1M
+                - Part Number: 1054995
+
+                PRODUCT DETAILS:
+                Description: Enterprise License for 1 Month
+                Warranty: N/A
+                Order Reason Code: N/A
+                Special Conditions: N/A
+                Additional Information: N/A
+
+                PRICING INFORMATION:
+                Global List Price: USD 500
+                Disti Price: N/A
+                Margin%: N/A
+                Reseller Price: N/A
+                Suggested Retail Price (SRP): N/A
+                SRP Inc Tax: N/A
+
+                Example output for Format 2 (Detailed):
+                PRODUCT IDENTIFIERS:
                 - Product Number: 12U8005PSG
+                - Series: ThinkCentre
+                - Machine Type Model (MTM): 12U8
                 - SKU: 12U8005PSG
                 - Model: ThinkCentre M70s Gen 5
-                - Machine Type Model: 12U8
                 - Part Number: 12U8-005
-                - Series: ThinkCentre
 
-                DETAILS:
+                PRODUCT DETAILS:
                 Description: ThinkCentre M70s Gen 5: 260W SFF (Q670 Chipset) - Intel® Core™ i5-14400, 10C (6P + 4E) / 16T, P-core 2.5 / 4.7GHz, E-core 1.8 / 3.5GHz, 20MB - 8GB UDIMM DDR5-4800 - 512GB SSD M.2 2280 PCIe® 4.0x4 Performance NVMe® Opal 2.0 / No ODD / 2.5" HDD Bracket Kit / Internal Speaker - Graphics: Integrated Intel® UHD Graphics 730 - Intel® Wi-Fi® 6E AX211, 802.11ax 2x2 + BT5.3, vPro® - USB Keyboard / Mouse - HDMI / Display Port / LAN - Windows® 11 Pro, English / NO Recovery Media - 3 Year on-site
-                Price: USD 1,399
+                Warranty: 3 Year on-site
+                Order Reason Code: N/A
+                Special Conditions: N/A
+                Additional Information: N/A
 
-                SEARCH TERMS:
-                - Product Number: 21M7003KSG
-                - SKU: 21M7003KSG
-                - Model: ThinkPad E14 Gen 6
-                - Machine Type Model: 21M7
-                - Part Number: 21M7-003
-                - Series: ThinkPad
-
-                DETAILS:
-                Description: ThinkPad E14 Gen 6 (14") Business Laptop with Intel Core i5-1335U, 16GB RAM, 512GB SSD, Windows 11 Pro, MIL-STD-810G tested, FHD (1920x1080) IPS display, Fingerprint Reader, Backlit Keyboard, 1 Year Warranty
-                Price: USD 1,396
+                PRICING INFORMATION:
+                Global List Price: N/A
+                Disti Price: USD 1,200
+                Margin%: 15%
+                Reseller Price: USD 1,380
+                Suggested Retail Price (SRP): USD 1,399
+                SRP Inc Tax: USD 1,499
                 """
 
                 # Call OLLAMA API with timeout
@@ -178,11 +210,11 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 # Extract all possible identifiers
                 identifiers = {
                     'product_number': "N/A",
+                    'series': "N/A",
+                    'mtm': "N/A",
                     'sku': "N/A",
                     'model': "N/A",
-                    'mtm': "N/A",
-                    'part_number': "N/A",
-                    'series': "N/A"
+                    'part_number': "N/A"
                 }
 
                 # Find all possible identifiers
@@ -193,14 +225,14 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                         
                         if any(term in key_lower for term in ['product', 'code', 'number']):
                             identifiers['product_number'] = value
+                        if 'series' in key_lower:
+                            identifiers['series'] = value
                         if 'sku' in key_lower:
                             identifiers['sku'] = value
                         if 'model' in key_lower:
                             identifiers['model'] = value
                         if 'part' in key_lower:
                             identifiers['part_number'] = value
-                        if 'series' in key_lower:
-                            identifiers['series'] = value
                         if 'mtm' in key_lower:
                             identifiers['mtm'] = value
 
@@ -215,47 +247,55 @@ def convert_to_rag_format(table_data: List[Dict[str, Any]], use_ollama: bool = T
                 for key, value in row.items():
                     if isinstance(value, (str, int, float)) and str(value).strip():
                         key_lower = str(key).lower().replace('#', '')
-                        if key_lower not in ['code', 'model', 'part', 'sku', 'mtm', 'series', 'price', 'srp', 'disti', 'reseller', 'usd']:
+                        if key_lower not in ['code', 'model', 'part', 'sku', 'mtm', 'series', 'price', 'srp', 'disti', 'reseller', 'usd', 'warranty', 'margin', 'order', 'special', 'additional', 'global']:
                             description_parts.append(f"{key}: {str(value).strip()}")
 
                 description = " - ".join(description_parts) if description_parts else "N/A"
 
-                # Find price
-                price = "N/A"
-                price_fields = [
-                    'USD',
-                    'Suggested Retail Price (SRP)',
-                    'SRP',
-                    'Disti Price',
-                    'Reseller Price',
-                    'Price'
-                ]
-                
-                for field in price_fields:
-                    if field in row:
-                        value = row[field]
-                        if isinstance(value, (int, float)):
-                            if field == 'USD':
-                                price = f"USD {value:,.2f}"
-                            else:
-                                price = f"SGD {value:,.2f}"
-                            break
-                        elif isinstance(value, str) and value.strip():
-                            price = value.strip()
-                            break
+                # Extract additional fields
+                warranty = row.get('Warranty', 'N/A')
+                order_reason = row.get('Order Reason Code', 'N/A')
+                special_conditions = row.get('Special Conditions', 'N/A')
+                additional_info = row.get('Additional Information', 'N/A')
+
+                # Format prices
+                def format_price(value, prefix=''):
+                    if isinstance(value, (int, float)):
+                        return f"{prefix} {value:,.2f}"
+                    elif isinstance(value, str) and value.strip():
+                        return value.strip()
+                    return 'N/A'
+
+                global_price = format_price(row.get('USD Global List Price', 'N/A'), 'USD')
+                disti_price = format_price(row.get('Disti Price', 'N/A'), 'USD')
+                margin = format_price(row.get('Margin%', 'N/A'), '')
+                reseller_price = format_price(row.get('Reseller Price', 'N/A'), 'USD')
+                srp = format_price(row.get('Suggested Retail Price (SRP)', 'N/A'), 'USD')
+                srp_tax = format_price(row.get('SRP Inc Tax', 'N/A'), 'USD')
 
                 # Format the output
-                result = f"""SEARCH TERMS:
+                result = f"""PRODUCT IDENTIFIERS:
 - Product Number: {identifiers['product_number']}
+- Series: {identifiers['series']}
+- Machine Type Model (MTM): {identifiers['mtm']}
 - SKU: {identifiers['sku']}
 - Model: {identifiers['model']}
-- Machine Type Model: {identifiers['mtm']}
 - Part Number: {identifiers['part_number']}
-- Series: {identifiers['series']}
 
-DETAILS:
+PRODUCT DETAILS:
 Description: {description}
-Price: {price}
+Warranty: {warranty}
+Order Reason Code: {order_reason}
+Special Conditions: {special_conditions}
+Additional Information: {additional_info}
+
+PRICING INFORMATION:
+Global List Price: {global_price}
+Disti Price: {disti_price}
+Margin%: {margin}
+Reseller Price: {reseller_price}
+Suggested Retail Price (SRP): {srp}
+SRP Inc Tax: {srp_tax}
 
 """
                 results.append(result)
