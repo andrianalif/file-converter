@@ -49,6 +49,9 @@ function App() {
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [contextData, setContextData] = useState<Record<string, any[]>>({});
+  const [isConverted, setIsConverted] = useState(false);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
 
   const theme = createTheme({
     palette: {
@@ -160,6 +163,19 @@ function App() {
         setTitle(response.data.defaultTitle);
       }
 
+      // --- Context Preview Integration ---
+      // Assume backend returns contextData as JSON in response.data.contextData
+      // If not, you may need to parse it from HTML or adjust backend
+      if (response.data.contextData) {
+        setContextData(response.data.contextData);
+        setSelectedSheet(Object.keys(response.data.contextData)[0]);
+        setIsConverted(true);
+      } else {
+        setContextData({});
+        setIsConverted(false);
+      }
+      // --- End Context Preview Integration ---
+
       setIsConverting(false);
       setActiveStep(1);
       setSuccess('File converted successfully!');
@@ -168,6 +184,8 @@ function App() {
       setError(err.response?.data?.error || 'Failed to convert file');
       setIsConverting(false);
       setShowStatus(true);
+      setContextData({});
+      setIsConverted(false);
     }
   };
 
@@ -370,6 +388,9 @@ function App() {
           <ExcelPreview
             file={file}
             onValidationComplete={handleValidationComplete}
+            contextData={contextData}
+            isConverted={isConverted}
+            selectedSheet={selectedSheet}
           />
         )}
 

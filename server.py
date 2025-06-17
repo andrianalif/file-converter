@@ -306,6 +306,221 @@ SRP Inc Tax: {srp_tax}
         logger.error(f"Error in convert_to_rag_format: {str(e)}")
         return f"Error: {str(e)}"
 
+def analyze_column_importance(headers: List[str], sample_data: List[Dict[str, Any]]) -> Dict[str, float]:
+    """
+    Analyze the importance of each column based on its content and characteristics
+    """
+    importance_scores = {}
+    
+    for header in headers:
+        score = 0.0
+        header_lower = str(header).lower()
+        
+        # Check column name patterns
+        if any(term in header_lower for term in ['id', 'code', 'number', 'reference', 'sku']):
+            score += 3.0  # High importance for identifiers
+        elif any(term in header_lower for term in ['name', 'title', 'product', 'item']):
+            score += 3.0  # High importance for names
+        elif any(term in header_lower for term in ['description', 'detail', 'info', 'note']):
+            score += 2.5  # High importance for descriptions
+        elif any(term in header_lower for term in ['price', 'cost', 'amount', '$']):
+            score += 2.5  # High importance for prices
+        elif any(term in header_lower for term in ['date', 'time', 'period']):
+            score += 1.5  # Medium importance for dates
+        elif any(term in header_lower for term in ['status', 'state', 'condition']):
+            score += 1.5  # Medium importance for status
+        elif any(term in header_lower for term in ['category', 'type', 'group', 'class']):
+            score += 2.0  # High importance for categories
+        elif any(term in header_lower for term in ['quantity', 'amount', 'count']):
+            score += 1.5  # Medium importance for quantities
+        
+        # Analyze content patterns
+        non_empty_values = [row.get(header, '') for row in sample_data if row.get(header, '')]
+        if non_empty_values:
+            # Check for unique values
+            unique_ratio = len(set(non_empty_values)) / len(non_empty_values)
+            score += unique_ratio * 1.0  # Higher score for more unique values
+            
+            # Check for numeric values
+            numeric_count = sum(1 for v in non_empty_values if str(v).replace('.', '').replace(',', '').isdigit())
+            if numeric_count / len(non_empty_values) > 0.5:
+                score += 1.0  # Bonus for numeric columns
+            
+            # Check for date-like values
+            date_pattern = r'\d{1,4}[-/]\d{1,2}[-/]\d{1,4}'
+            date_count = sum(1 for v in non_empty_values if re.search(date_pattern, str(v)))
+            if date_count / len(non_empty_values) > 0.5:
+                score += 0.5  # Bonus for date columns
+        
+        importance_scores[header] = score
+    
+    return importance_scores
+
+def generate_contexts_from_excel(table_data: List[Dict[str, Any]], sheet_name: str) -> List[Dict[str, Any]]:
+    """
+    Automatically generate contexts from Excel data by analyzing the structure and content
+    """
+    if not table_data:
+        return []
+        
+    # Get all unique headers from the data
+    headers = set()
+    for row in table_data:
+        headers.update(row.keys())
+    headers = list(headers)
+    
+    # Analyze column importance
+    importance_scores = analyze_column_importance(headers, table_data)
+    
+    # Sort headers by importance
+    sorted_headers = sorted(headers, key=lambda h: importance_scores.get(h, 0), reverse=True)
+    
+    contexts = []
+    for row in table_data:
+        if not any(str(value).strip() for value in row.values()):
+            continue
+            
+        # Initialize context with basic structure
+        context = {
+            'category': sheet_name,
+            'metadata': {
+                'column_importance': {h: importance_scores.get(h, 0) for h in headers},
+                'identifiers': {},
+                'descriptions': {},
+                'measurements': {},
+                'dates': {},
+                'status': {},
+                'relationships': {},
+                'additional': {}
+            }
+        }
+        
+        # Process each column based on its importance and content
+        for header in sorted_headers:
+            value = row.get(header, '')
+            if not value or str(value).strip() == '':
+                continue
+                
+            value_str = str(value).strip()
+            header_lower = str(header).lower()
+            
+            # Categorize the column based on its name and content
+            if any(term in header_lower for term in ['id', 'code', 'number', 'reference', 'sku']):
+                context['metadata']['identifiers'][header] = value_str
+                if not context.get('product_number'):
+                    context['product_number'] = value_str
+            elif any(term in header_lower for term in ['name', 'title', 'product', 'item']):
+                context['product_name'] = value_str
+            elif any(term in header_lower for term in ['description', 'detail', 'info', 'note']):
+                context['metadata']['descriptions'][header] = value_str
+                if not context.get('description'):
+                    context['description'] = value_str
+            elif any(term in header_lower for term in ['price', 'cost', 'amount', '$']):
+                try:
+                    context['price'] = float(str(value).replace('$', '').replace(',', ''))
+                except:
+                    context['price'] = value_str
+            elif any(term in header_lower for term in ['date', 'time', 'period']):
+                context['metadata']['dates'][header] = value_str
+            elif any(term in header_lower for term in ['status', 'state', 'condition']):
+                context['metadata']['status'][header] = value_str
+            elif any(term in header_lower for term in ['quantity', 'amount', 'count', 'size', 'weight', 'dimension']):
+                context['metadata']['measurements'][header] = value_str
+            elif any(term in header_lower for term in ['category', 'type', 'group', 'class']):
+                context['category'] = value_str
+            elif any(term in header_lower for term in ['related', 'parent', 'child', 'component']):
+                context['metadata']['relationships'][header] = value_str
+            else:
+                # Store any other column as additional metadata
+                context['metadata']['additional'][header] = value_str
+        
+        # Ensure required fields exist
+        if 'product_name' not in context:
+            # Try to find a suitable name from identifiers or descriptions
+            for identifier in context['metadata']['identifiers'].values():
+                if len(identifier) > 3:  # Avoid using very short identifiers as names
+                    context['product_name'] = identifier
+                    break
+            if 'product_name' not in context:
+                context['product_name'] = f"Item {len(contexts) + 1}"
+        
+        if 'description' not in context:
+            # Combine all descriptions if available
+            descriptions = list(context['metadata']['descriptions'].values())
+            if descriptions:
+                context['description'] = ' | '.join(descriptions)
+            else:
+                context['description'] = context['product_name']
+        
+        # Clean up empty metadata
+        for key in list(context['metadata'].keys()):
+            if not context['metadata'][key]:
+                del context['metadata'][key]
+        
+        # Add column analysis information
+        context['metadata']['column_analysis'] = {
+            'total_columns': len(headers),
+            'important_columns': [h for h in sorted_headers if importance_scores.get(h, 0) > 2.0],
+            'column_types': {
+                'identifiers': list(context['metadata'].get('identifiers', {}).keys()),
+                'descriptions': list(context['metadata'].get('descriptions', {}).keys()),
+                'measurements': list(context['metadata'].get('measurements', {}).keys()),
+                'dates': list(context['metadata'].get('dates', {}).keys()),
+                'status': list(context['metadata'].get('status', {}).keys())
+            }
+        }
+        
+        contexts.append(context)
+    
+    return contexts
+
+def extract_specifications(description: str) -> Dict[str, Any]:
+    """
+    Extract specifications from product description using enhanced pattern matching
+    """
+    specs = {}
+    
+    # Enhanced specification patterns
+    patterns = {
+        'processor': r'(?:Intel|AMD|Core|Ryzen|i\d|i\d-\d{4}[A-Z]?|Snapdragon|MediaTek|Apple\s+[A-Z0-9]+)',
+        'ram': r'(\d+GB(?:\s+RAM|\s+DDR\d)?)',
+        'storage': r'(\d+GB(?:\s+SSD|\s+HDD|\s+NVMe)?)',
+        'display': r'(\d+(?:\.\d+)?["\'](?:\s+FHD|\s+UHD|\s+4K|\s+Retina|\s+OLED|\s+LCD)?)',
+        'os': r'(Windows\s+\d+(?:\s+Pro|\s+Home|\s+Enterprise)?|Linux|macOS|iOS|Android)',
+        'warranty': r'(\d+\s+Year(?:\s+on-site|\s+carry-in|\s+limited)?)',
+        'battery': r'(\d+(?:\.\d+)?\s*(?:mAh|Wh|hours?))',
+        'resolution': r'(\d+x\d+(?:\s+p)?)',
+        'refresh_rate': r'(\d+(?:\.\d+)?\s*Hz)',
+        'ports': r'(USB\s+\d+(?:\.\d+)?|Thunderbolt\s+\d+|HDMI\s+\d+(?:\.\d+)?|DisplayPort\s+\d+(?:\.\d+)?)',
+        'network': r'(Wi-Fi\s+\d+(?:\.\d+)?|Bluetooth\s+\d+(?:\.\d+)?|5G|4G|LTE)',
+        'camera': r'(\d+(?:\.\d+)?\s*MP(?:\s+camera)?)',
+        'weight': r'(\d+(?:\.\d+)?\s*(?:kg|g|lbs))',
+        'dimensions': r'(\d+(?:\.\d+)?\s*(?:mm|cm|inch)(?:\s*x\s*\d+(?:\.\d+)?\s*(?:mm|cm|inch)){2})'
+    }
+    
+    # Extract specifications using patterns
+    for key, pattern in patterns.items():
+        matches = re.finditer(pattern, description, re.IGNORECASE)
+        values = [match.group(0) for match in matches]
+        if values:
+            specs[key] = values[0] if len(values) == 1 else values
+    
+    # Extract version numbers
+    version_pattern = r'(?:v|version|ver\.?)\s*(\d+(?:\.\d+){1,3})'
+    version_matches = re.finditer(version_pattern, description, re.IGNORECASE)
+    versions = [match.group(1) for match in version_matches]
+    if versions:
+        specs['version'] = versions[0] if len(versions) == 1 else versions
+    
+    # Extract model numbers
+    model_pattern = r'(?:model|type)\s*(?:number|no\.?)?\s*[:#]?\s*([A-Z0-9-]+)'
+    model_matches = re.finditer(model_pattern, description, re.IGNORECASE)
+    models = [match.group(1) for match in model_matches]
+    if models:
+        specs['model_number'] = models[0] if len(models) == 1 else models
+    
+    return specs
+
 def convert_excel_to_html(file_path):
     try:
         logger.debug(f"Loading workbook: {file_path}")
@@ -318,34 +533,6 @@ def convert_excel_to_html(file_path):
         product_groups = {}
         current_category = None
         current_product_name = None
-        
-        # Add predefined product contexts for known models
-        predefined_contexts = [
-            {
-                'category': 'Laptops',
-                'product_name': 'Lenovo ThinkPad E14 Gen 6',
-                'product_number': '21M7003KSG',
-                'description': 'Lenovo ThinkPad E14 Gen 6 (14") Business Laptop with Intel Core i5-1335U, 16GB RAM, 512GB SSD, Windows 11 Pro, MIL-STD-810G tested, FHD (1920x1080) IPS display, Fingerprint Reader, Backlit Keyboard, 1 Year Warranty',
-                'price': 1396,
-                'subcategory': 'Business Laptops',
-                'sheet_name': 'Laptops',
-                'metadata': {
-                    'is_subscription': False,
-                    'is_service': False,
-                    'specifications': {
-                        'processor': 'Intel Core i5-1335U',
-                        'ram': '16GB',
-                        'storage': '512GB SSD',
-                        'os': 'Windows 11 Pro',
-                        'display': '14" FHD (1920x1080) IPS',
-                        'features': ['Fingerprint Reader', 'Backlit Keyboard', 'MIL-STD-810G tested'],
-                        'warranty': '1 Year',
-                        'ports': ['USB-C', 'HDMI', 'USB-A', 'Headphone/Mic Combo Jack']
-                    }
-                }
-            }
-        ]
-        product_contexts.extend(predefined_contexts)
         
         # CSS styles as a separate string
         css_styles = """
@@ -363,7 +550,7 @@ def convert_excel_to_html(file_path):
                 display: flex;
                 flex-direction: column;
             }
-            h1, h2 { color: #2c3e50; margin-bottom: 20px; }
+            h1, h2, h3 { color: #2c3e50; margin-bottom: 20px; }
             .category-header { background-color: #f8f9fa; padding: 15px; margin: 20px 0; border-left: 5px solid #2c3e50; font-size: 1.2em; font-weight: bold; }
             .main-title { font-size: 2em; text-align: center; margin-bottom: 30px; color: #2c3e50; }
             .subtitle { font-size: 1.5em; text-align: center; margin: 20px 0; color: #34495e; }
@@ -381,6 +568,68 @@ def convert_excel_to_html(file_path):
             .section-header { background-color: #f8f9fa; font-weight: bold; color: #2c3e50; }
             .section-header td { padding: 15px; font-size: 1.1em; }
             .metadata { text-align: center; color: #666; margin: 10px 0; font-style: italic; }
+            .context-preview { 
+                background-color: #fff; 
+                border: 1px solid #ddd; 
+                border-radius: 4px; 
+                padding: 20px; 
+                margin: 20px 0; 
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+                display: none; /* Hidden by default */
+            }
+            .context-item {
+                border: 1px solid #eee;
+                padding: 15px;
+                margin: 10px 0;
+                border-radius: 4px;
+                background-color: #f8f9fa;
+            }
+            .context-item h4 {
+                margin: 0 0 10px 0;
+                color: #2c3e50;
+            }
+            .context-item pre {
+                background-color: #fff;
+                padding: 10px;
+                border-radius: 4px;
+                overflow-x: auto;
+                margin: 0;
+            }
+            .context-summary {
+                background-color: #e8f4f8;
+                padding: 15px;
+                margin: 10px 0;
+                border-radius: 4px;
+                border-left: 4px solid #2c3e50;
+            }
+            .context-summary h4 {
+                margin: 0 0 10px 0;
+                color: #2c3e50;
+            }
+            .context-summary ul {
+                margin: 0;
+                padding-left: 20px;
+            }
+            .context-summary li {
+                margin: 5px 0;
+            }
+            .show-context {
+                display: block !important;
+            }
+            .convert-button {
+                background-color: #2c3e50;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 1em;
+                margin: 20px auto;
+                display: block;
+            }
+            .convert-button:hover {
+                background-color: #34495e;
+            }
         </style>
         """
         
@@ -406,12 +655,24 @@ def convert_excel_to_html(file_path):
             headers = {}
             first_row = next(ws.rows)
             
+            # Process headers
             for idx, cell in enumerate(first_row):
                 header_value = get_cell_value_safe(cell)
                 if header_value:
                     headers[idx] = str(header_value).strip()
             
+            # Add header row to HTML
+            html_content += "<tr>"
+            for idx in range(len(headers)):
+                header = headers.get(idx, '')
+                html_content += f'<th>{header}</th>'
+            html_content += "</tr>\n"
+            
+            sheet_data = []
             for row_idx, row in enumerate(ws.rows):
+                if row_idx == 0:  # Skip header row
+                    continue
+                    
                 if all(get_cell_value_safe(cell) == '' for cell in row):
                     if not is_header_section:
                         html_content += '<tr class="empty-row"><td colspan="100%">&nbsp;</td></tr>\n'
@@ -455,66 +716,75 @@ def convert_excel_to_html(file_path):
                     else:
                         display_value = str(value)
                     
-                    if row_idx > 0 and header:
+                    if header:
                         row_data[header] = value
                     
                     html_content += f'<td class="{css_class}">{display_value}</td>'
                 
                 html_content += "</tr>\n"
                 
-                if row_idx > 0 and row_data:
-                    # Add row data for RAG conversion
+                if row_data:
+                    sheet_data.append(row_data)
                     table_data.append(row_data)
-                    
-                    product_number = row_data.get('Product Number', '')
-                    description_value = row_data.get('Description', '')
-                    description_str = str(description_value) if description_value is not None else ''
-                    
-                    price_value = None
-                    for key in row_data:
-                        if any(price_term in str(key).lower() for price_term in ['price', 'usd', '$']):
-                            price_value = row_data[key]
-                            break
-                    
-                    # Ambil warranty jika ada
-                    warranty_value = row_data.get('Warranty', '')
-                    
-                    product_context = {
-                        'category': current_category or sheet,
-                        'product_name': current_product_name,
-                        'product_number': product_number,
-                        'description': description_str,
-                        'price': price_value,
-                        'warranty': warranty_value,  # Tambahkan field warranty
-                        'subcategory': current_category,
-                        'sheet_name': sheet,
-                        'metadata': {
-                            'is_subscription': 'subscription' in description_str.lower(),
-                            'is_service': 'service' in description_str.lower(),
-                        }
-                    }
-                    product_contexts.append(product_context)
-                    
-                    if current_product_name:
-                        if current_product_name not in product_groups:
-                            product_groups[current_product_name] = {
-                                'product_numbers': [],
-                                'descriptions': {},
-                                'prices': {}
-                            }
-                        if product_number:
-                            product_groups[current_product_name]['product_numbers'].append(product_number)
-                            product_groups[current_product_name]['descriptions'][product_number] = description_str
-                            product_groups[current_product_name]['prices'][product_number] = price_value
             
             html_content += "</table>\n</div>\n"
+            
+            # Generate contexts for this sheet
+            if sheet_data:
+                sheet_contexts = generate_contexts_from_excel(sheet_data, sheet)
+                product_contexts.extend(sheet_contexts)
+                
+                # Add context preview for this sheet (hidden by default)
+                html_content += f"""
+                <div class="context-preview" id="context-preview-{sheet}">
+                    <h3>Generated Contexts for {sheet}</h3>
+                    <div class="context-summary">
+                        <h4>Sheet Summary:</h4>
+                        <ul>
+                            <li>Total Products: {len(sheet_contexts)}</li>
+                            <li>Categories: {', '.join(set(ctx.get('category', '') for ctx in sheet_contexts))}</li>
+                            <li>Columns Used: {', '.join(headers.values())}</li>
+                        </ul>
+                    </div>
+                    <div class="context-items">
+                """
+                
+                for context in sheet_contexts:
+                    # Ensure product_name exists
+                    if 'product_name' not in context:
+                        context['product_name'] = context.get('product_number', 'Unknown Product')
+                    
+                    html_content += f"""
+                    <div class="context-item">
+                        <h4>{context['product_name']}</h4>
+                        <pre>{json.dumps(context, indent=2)}</pre>
+                    </div>
+                    """
+                
+                html_content += """
+                    </div>
+                </div>
+                """
+        
+        # Add convert button and JavaScript to show context preview
+        html_content += """
+        <button class="convert-button" onclick="showContextPreview()">Show Context Preview</button>
+        <script>
+        function showContextPreview() {
+            document.querySelectorAll('.context-preview').forEach(function(preview) {
+                preview.classList.add('show-context');
+            });
+            document.querySelector('.convert-button').style.display = 'none';
+        }
+        </script>
+        """
         
         # Convert table data to RAG format
         rag_content = convert_to_rag_format(table_data)
         
-        # Add RAG content to the page
+        # Add RAG content to the page (hidden by default)
         html_content += f"""
-        <div class="rag-content" style="margin-top: 2rem; padding: 1rem; background-color: #f8f9fa; border-radius: 4px;">
+        <div class="context-preview" id="rag-content">
             <h3>RAG Format</h3>
             <pre style="white-space: pre-wrap; font-family: 'Poppins', monospace; font-size: 0.9em;">
 {rag_content}
@@ -529,14 +799,14 @@ def convert_excel_to_html(file_path):
             "itemListElement": [
                 {
                     "@type": "Product",
-                    "name": ctx['product_name'],
-                    "productNumber": ctx['product_number'],
-                    "description": ctx['description'],
-                    "category": ctx['category'],
-                    "warranty": ctx.get('warranty', ''),  # Tambahkan field warranty
+                    "name": ctx.get('product_name', 'Unknown Product'),
+                    "productNumber": ctx.get('product_number', ''),
+                    "description": ctx.get('description', ''),
+                    "category": ctx.get('category', ''),
+                    "warranty": ctx.get('warranty', ''),
                     "offers": {
                         "@type": "Offer",
-                        "price": str(ctx['price']) if ctx['price'] is not None else '',
+                        "price": str(ctx.get('price', '')) if ctx.get('price') is not None else '',
                         "priceCurrency": "USD"
                     }
                 }
@@ -688,18 +958,43 @@ def process_file():
         
         try:
             if action == 'convert':
+                # --- context summary extraction ---
+                wb = load_workbook(temp_path, data_only=True)
+                contextData = {}
+                for sheet in wb.sheetnames:
+                    ws = wb[sheet]
+                    headers = {}
+                    first_row = next(ws.rows)
+                    for idx, cell in enumerate(first_row):
+                        header_value = get_cell_value_safe(cell)
+                        if header_value:
+                            headers[idx] = str(header_value).strip()
+                    sheet_data = []
+                    for row_idx, row in enumerate(ws.rows):
+                        if row_idx == 0:
+                            continue
+                        row_data = {}
+                        for col_idx, cell in enumerate(row):
+                            if col_idx in headers:
+                                row_data[headers[col_idx]] = get_cell_value_safe(cell)
+                        if row_data:
+                            sheet_data.append(row_data)
+                    if sheet_data:
+                        contextData[sheet] = generate_contexts_from_excel(sheet_data, sheet)
+                # --- end context summary extraction ---
                 html_content = convert_excel_to_html(temp_path)
                 return jsonify({
                     'status': 'success',
                     'html': html_content,
                     'defaultTitle': filename,
+                    'contextData': contextData,
                     'ui': {
                         'type': 'success',
                         'title': 'Conversion Successful',
                         'description': 'Your Excel file has been converted to HTML format.'
                     }
                 })
-                
+            
             elif action == 'publish':
                 if not title:
                     return jsonify({
